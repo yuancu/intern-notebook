@@ -227,7 +227,7 @@ if __name__ == '__main__':
 
     # Data, model, and output directories
     parser.add_argument('--output-data-dir', type=str, default=os.environ['SM_OUTPUT_DATA_DIR'])
-    parser.add_argument('--model-dir', type=str, default='models_real')
+    parser.add_argument('--model-dir', type=str, default=os.environ['SM_MODEL_DIR'])
     parser.add_argument('--train', type=str, default=train_path)
     parser.add_argument('--dev', type=str, default=dev_path)
     parser.add_argument('--schema', type=str, default=schema_path)
@@ -320,6 +320,9 @@ if __name__ == '__main__':
             loss_sum.backward()
             optimizer.step()
 
+        # create default folder
+        if not os.path.exists('models_real'):
+            os.makedirs('models_real')
         # save the model to 'model-dir'
         with open(os.path.join(args.model_dir, 's_'+str(i)+'.pkl'), 'wb') as f:
             torch.save(s_m, f)
