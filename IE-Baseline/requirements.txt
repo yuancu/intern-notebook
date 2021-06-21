@@ -1,2 +1,0 @@
-tqdm
-tensorboard<2.4
