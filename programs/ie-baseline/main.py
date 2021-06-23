@@ -8,11 +8,16 @@ from tqdm import tqdm
 import model
 import torch
 from torch.autograd import Variable
-#import data_prepare
-import os
 import torch.utils.data as Data
+import os
+
 import torch.nn.functional as F
 import time
+from transformers import BertTokenizer
+from data_gen import MyDataset, collate_fn
+from model_bert_based import SubjectModel, ObjectModel
+
+BERT_MODEL_NAME = "hfl/chinese-bert-wwm-ext" # bert-base-chinese
 
 # for macOS compatibility
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -20,9 +25,8 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 torch.backends.cudnn.benchmark = True
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-CHAR_SIZE = 128
 SENT_LENGTH = 4
-HIDDEN_SIZE = 64
+WORD_EMB_SIZE = 768 # default bert embedding size
 EPOCH_NUM = 100
 
 BATCH_SIZE = 64
@@ -31,13 +35,6 @@ BATCH_SIZE = 64
 def get_now_time():
     a = time.time()
     return time.ctime(a)
-
-
-def seq_padding(X):
-    L = [len(x) for x in X]
-    ML = max(L)
-    # print("ML",ML)
-    return [x + [0] * (ML - len(x)) for x in X]
 
 
 def seq_padding_vec(X):
@@ -59,77 +56,6 @@ id2predicate = {int(i): j for i, j in id2predicate.items()}
 id2char, char2id = json.load(open(generated_char_path))
 num_classes = len(id2predicate)
 
-class MyDataset(Data.Dataset):
-    """
-        下载数据、初始化数据，都可以在这里完成
-    """
-
-    def __init__(self, data):
-        self.data = data
-        self.len = len(data)
-
-    def __getitem__(self, index):
-        d = self.data[index]
-        return self.process_data(d)
-
-    def __len__(self):
-        return self.len
-    
-    def process_data(self, d):
-        text = d['text']
-        items = defaultdict(list)
-        for sp in d['spo_list']:
-            subjectid = text.find(sp[0])
-            objectid = text.find(sp[2])
-            if subjectid != -1 and objectid != -1:
-                key = (subjectid, subjectid+len(sp[0])) # key is the span(start, end) of the subject
-                # items is {(S_start, S_end): list of (O_start_pos, O_end_pos, predicate_id)}
-                items[key].append(
-                    (objectid, objectid+len(sp[2]), predicate2id[sp[1]]))
-        # t is text token ids
-        t = [char2id.get(c, 1) for c in text]  # 1是unk，0是padding
-        # s1: one-hot vector where start of subject is 1
-        # s2: one-hot vector where end of subject is 1
-        s1, s2 = [0] * len(text), [0] * len(text)
-        for j in items:
-            s1[j[0]] = 1
-            s2[j[1]-1] = 1
-        # o1: zero vector, the start of each O is marked with its predicate ID
-        # o2: zero vector, the end of each O is marked with its predicate ID
-        o1, o2 = [0] * len(text), [0] * len(text)  # 0是unk类（共49+1个类）
-        k1, k2 = (0, 0)
-        if items:
-            # k1, k2: randomly sampled (S_start, S_end) pair?
-            k1, k2 = choice(list(items.keys()))
-            for j in items[(k1, k2)]:
-                o1[j[0]] = j[2]
-                o2[j[1]-1] = j[2]
-        return t, s1, s2, k1, k2-1, o1, o2
-
-
-def collate_fn(data):
-    t = [item[0] for item in data]
-    s1 = [item[1] for item in data]
-    s2 = [item[2] for item in data]
-    k1 = [item[3] for item in data]
-    k2 = [item[4] for item in data]
-    o1 = [item[5] for item in data]
-    o2 = [item[6] for item in data]
-    t = np.array(seq_padding(t))
-    s1 = np.array(seq_padding(s1))
-    s2 = np.array(seq_padding(s2))
-    o1 = np.array(seq_padding(o1))
-    o2 = np.array(seq_padding(o2))
-    k1, k2 = np.array(k1), np.array(k2)
-    return {
-        'T': torch.LongTensor(t),
-        'S1': torch.FloatTensor(s1),
-        'S2': torch.FloatTensor(s2),
-        'K1': torch.LongTensor(k1),
-        'K2': torch.LongTensor(k2),
-        'O1': torch.LongTensor(o1),
-        'O2': torch.LongTensor(o2),
-    }
 
 def extract_items(text_in):
     R = []
@@ -184,7 +110,8 @@ def evaluate():
     return 2 * A / (B + C), A / B, A / C
 
 if __name__ == '__main__':
-    torch_dataset = MyDataset(train_data)
+    train_data = train_data[:12]
+    torch_dataset = MyDataset(train_data, BERT_MODEL_NAME)
     loader = Data.DataLoader(
         dataset=torch_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
@@ -194,9 +121,8 @@ if __name__ == '__main__':
     )
 
     # print("len",len(id2char))
-    s_m = model.s_model(len(char2id)+2, CHAR_SIZE, HIDDEN_SIZE).to(device)
-    po_m = model.po_model(len(char2id)+2, CHAR_SIZE,
-                          HIDDEN_SIZE, 49).to(device)
+    s_m = SubjectModel(WORD_EMB_SIZE).to(device)
+    po_m = ObjectModel(WORD_EMB_SIZE, 49).to(device)
     
     params = list(s_m.parameters())
     params += list(po_m.parameters())
@@ -211,40 +137,45 @@ if __name__ == '__main__':
     for i in range(EPOCH_NUM):
         for step, loader_res in tqdm(iter(enumerate(loader))):
             # print(get_now_time())
-            t_s = loader_res["T"].to(device)
-            k1 = loader_res["K1"].to(device)
-            k2 = loader_res["K2"].to(device)
-            s1 = loader_res["S1"].to(device)
-            s2 = loader_res["S2"].to(device)
-            o1 = loader_res["O1"].to(device)
-            o2 = loader_res["O2"].to(device)
+            # dim of following data's 0-dim is batch size
+            # max_len = 300, 句子最长为300
+            text = loader_res["T"].to(device) # text (in the form of index, zero-padding)
+            subject_start_pos = loader_res["K1"].to(device) # subject start index
+            subject_end_pos = loader_res["K2"].to(device) # subject end index
+            subject_start = loader_res["S1"].to(device) # subject start in 1-0 vector (may have multiple subject)
+            subject_end = loader_res["S2"].to(device) # subject end in 1-0 vector (may have multiple)
+            object_start = loader_res["O1"].to(device) # object start in 1-0 vector (may have multiple object)
+            object_end = loader_res["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
+            att_mask = loader_res['masks'].to(device)
 
-            ps_1, ps_2, t, t_max, mask = s_m(t_s)
+            att_mask = att_mask.unsqueeze(dim=2)
 
-            t, t_max, k1, k2 = t.to(device), t_max.to(
-                device), k1.to(device), k2.to(device)
-            po_1, po_2 = po_m(t, t_max, k1, k2)
+            predicted_subject_start, predicted_subject_end, t, t_max = s_m(text, att_mask)
 
-            ps_1 = ps_1.to(device)
-            ps_2 = ps_2.to(device)
+            t, t_max, subject_start_pos, subject_end_pos = t.to(device), t_max.to(
+                device), subject_start_pos.to(device), subject_end_pos.to(device)
+            po_1, po_2 = po_m(t, t_max, subject_start_pos, subject_end_pos)
+
+            predicted_subject_start = predicted_subject_start.to(device)
+            predicted_subject_end = predicted_subject_end.to(device)
             po_1 = po_1.to(device)
             po_2 = po_2.to(device)
 
-            s1 = torch.unsqueeze(s1, 2)
-            s2 = torch.unsqueeze(s2, 2)
+            subject_start = torch.unsqueeze(subject_start, 2)
+            subject_end = torch.unsqueeze(subject_end, 2)
 
-            s1_loss = b_loss(ps_1, s1)
-            s1_loss = torch.sum(s1_loss.mul(mask))/torch.sum(mask)
-            s2_loss = b_loss(ps_2, s2)
-            s2_loss = torch.sum(s2_loss.mul(mask))/torch.sum(mask)
+            s1_loss = b_loss(predicted_subject_start, subject_start)
+            s1_loss = torch.sum(s1_loss.mul(att_mask))/torch.sum(att_mask)
+            s2_loss = b_loss(predicted_subject_end, subject_end)
+            s2_loss = torch.sum(s2_loss.mul(att_mask))/torch.sum(att_mask)
 
             po_1 = po_1.permute(0, 2, 1)
             po_2 = po_2.permute(0, 2, 1)
 
-            o1_loss = loss(po_1, o1)
-            o1_loss = torch.sum(o1_loss.mul(mask[:, :, 0])) / torch.sum(mask)
-            o2_loss = loss(po_2, o2)
-            o2_loss = torch.sum(o2_loss.mul(mask[:, :, 0])) / torch.sum(mask)
+            o1_loss = loss(po_1, object_start)
+            o1_loss = torch.sum(o1_loss.mul(att_mask[:, :, 0])) / torch.sum(att_mask)
+            o2_loss = loss(po_2, object_end)
+            o2_loss = torch.sum(o2_loss.mul(att_mask[:, :, 0])) / torch.sum(att_mask)
 
             loss_sum = 2.5 * (s1_loss + s2_loss) + (o1_loss + o2_loss)
 
