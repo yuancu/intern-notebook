@@ -32,6 +32,8 @@ EPOCH_NUM = 100
 
 BATCH_SIZE = 64
 
+from torch.utils.tensorboard import SummaryWriter
+writer = SummaryWriter(log_dir='./logs')
 
 def get_now_time():
     a = time.time()
@@ -147,6 +149,7 @@ if __name__ == '__main__':
     best_epoch = 0
 
     for i in range(EPOCH_NUM):
+        epoch_start_time = time.time()
         for step, loader_res in tqdm(iter(enumerate(loader))):
             # print(get_now_time())
             # dim of following data's 0-dim is batch size
@@ -205,6 +208,14 @@ if __name__ == '__main__':
         f1, precision, recall = evaluate()
 
         print("epoch:", i, "loss:", loss_sum.data)
+
+        epoch_end_time = time.time()
+        epoch_time_elapsed = epoch_end_time - epoch_start_time
+        print("epoch {} used {} seconds (with bsz={})".format(i, epoch_time_elapsed, BATCH_SIZE))
+        writer.add_scalar('Loss/train', loss_sum.data, i)
+        writer.add_scalar('f1', f1, i)
+        writer.add_scalar('precision', precision, i)
+        writer.add_scalar('recall', recall, i)
 
         if f1 >= best_f1:
             best_f1 = f1
