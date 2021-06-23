@@ -29,7 +29,6 @@ class BertDataGenerator:
         idxs = list(range(len(self.data)))
         # print(idxs)
         np.random.shuffle(idxs)
-        idxs = idxs[:1000]
         T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
         attention_masks = []
         for i in tqdm(idxs, desc='Preparing Data'):
