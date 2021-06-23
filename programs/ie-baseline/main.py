@@ -12,6 +12,7 @@ import torch.utils.data as Data
 import os
 
 import torch.nn.functional as F
+import torch.nn as nn
 import time
 from transformers import BertTokenizer
 from data_gen import BertDataGenerator, MyDataset, collate_fn
@@ -126,6 +127,14 @@ if __name__ == '__main__':
     # print("len",len(id2char))
     s_m = SubjectModel(WORD_EMB_SIZE).to(device)
     po_m = ObjectModel(WORD_EMB_SIZE, 49).to(device)
+
+    if torch.cuda.device_count() > 1:
+        print('Using', torch.cuda.device_count(), "GPUs!")
+        s_m = nn.DataParallel(s_m)
+        po_m = nn.DataParallel(po_m)
+
+    s_m = s_m.to(device)
+    po_m = po_m.to(device)
     
     params = list(s_m.parameters())
     params += list(po_m.parameters())
