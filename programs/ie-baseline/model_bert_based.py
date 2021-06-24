@@ -3,13 +3,14 @@ from torch import nn
 import numpy as np
 #import matplotlib.pyplot as plt
 from transformers import BertTokenizer, PreTrainedModel, BertModel
+import config
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 ###################
 # BERT related code
 # download vocabularies from hugging face and cache
-BERT_MODEL_NAME = "hfl/chinese-bert-wwm-ext" # bert-base-chinese
+BERT_MODEL_NAME = config.bert_model_name
 # tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
 # bert = BertModel.from_pretrained(BERT_MODEL_NAME)
 

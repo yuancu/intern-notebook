@@ -6,13 +6,13 @@ from random import choice
 import torch
 import torch.utils.data as Data
 from tqdm import tqdm
+import config
 
 file_dir = os.path.dirname(os.path.realpath(__file__))
 generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
 id2predicate, predicate2id = json.load(open(generated_schema_path))
+MAX_SENTENCE_LEN = config.max_sentence_len
 
-MAX_SENTENCE_LEN = 302 # around 1.5% of the sentences would be truncated
-    
 class BertDataGenerator:
     def __init__(self, data, tokenizer, batch_size=64):
         self.data = data
@@ -28,6 +28,9 @@ class BertDataGenerator:
     def pro_res(self):
         idxs = list(range(len(self.data)))
         np.random.shuffle(idxs)
+        if config.debug_mode:
+            print("Training with only one sample")
+            idxs = idxs[:1]
         T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
         attention_masks = []
         for i in tqdm(idxs, desc='Preparing Data'):

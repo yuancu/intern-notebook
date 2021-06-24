@@ -1,25 +1,27 @@
 #! -*- coding:utf-8 -*-
 
-from collections import defaultdict
 import json
-import numpy as np
-from random import choice
 from tqdm import tqdm
-import model
 import torch
-from torch.autograd import Variable
 import torch.utils.data as Data
 import os
 
-import torch.nn.functional as F
 import torch.nn as nn
 import time
 from transformers import BertTokenizer
 from data_gen import BertDataGenerator, MyDataset, collate_fn
 from model_bert_based import SubjectModel, ObjectModel
-from data_gen import MAX_SENTENCE_LEN
+from utils import extract_items
+import config
+from config import create_parser
 
-BERT_MODEL_NAME = "hfl/chinese-bert-wwm-ext" # bert-base-chinese
+parser = create_parser()
+args = parser.parse_args()
+config.batch_size = args.batch_size
+if args.debug_mode:
+    config.debug_mode = True
+
+BERT_MODEL_NAME = config.bert_model_name
 BERT_TOKENIZER = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
 # for macOS compatibility
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -27,26 +29,13 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 torch.backends.cudnn.benchmark = True
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-SENT_LENGTH = 4
-WORD_EMB_SIZE = 768 # default bert embedding size
-EPOCH_NUM = 100
+WORD_EMB_SIZE = config.word_emb_size # default bert embedding size
+EPOCH_NUM = config.epoch_num
 
-BATCH_SIZE = 64
+BATCH_SIZE = config.batch_size
 
 from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter(log_dir='./logs')
-
-def get_now_time():
-    a = time.time()
-    return time.ctime(a)
-
-
-def seq_padding_vec(X):
-    L = [len(x) for x in X]
-    ML = max(L)
-    # print("ML",ML)
-    return [x + [[1, 0]] * (ML - len(x)) for x in X]
-
 
 file_dir = os.path.dirname(os.path.realpath(__file__))
 train_path = os.path.join(file_dir, 'generated/train_data_me.json')
@@ -61,52 +50,14 @@ id2char, char2id = json.load(open(generated_char_path))
 num_classes = len(id2predicate)
 
 
-def extract_items(text_in):
-    R = []
-    output = BERT_TOKENIZER.encode_plus(text_in, max_length=MAX_SENTENCE_LEN, truncation=True, 
-                    pad_to_max_length=True, return_tensors="pt")
-    _s = output['input_ids']
-    attention_mask = output['attention_mask']
-    attention_mask = attention_mask.unsqueeze(dim=2)
-    _k1, _k2, t, t_max= s_m(_s.to(device), attention_mask.to(device))
-    _k1, _k2 = _k1[0, :, 0], _k2[0, :, 0]
-    _kk1s = []
-    for i, _kk1 in enumerate(_k1):
-        if _kk1 > 0.5:
-            _subject = ''
-            for j, _kk2 in enumerate(_k2[i:]):
-                if _kk2 > 0.5:
-                    _subject = text_in[i: i+j+1]
-                    break
-            if _subject:
-                _k1, _k2 = torch.LongTensor([[i]]), torch.LongTensor(
-                    [[i+j]])  # np.array([i]), np.array([i+j])
-                _o1, _o2 = po_m(t.to(device), t_max.to(
-                    device), _k1.to(device), _k2.to(device))
-                _o1, _o2 = _o1.cpu().data.numpy(), _o2.cpu().data.numpy()
-
-                _o1, _o2 = np.argmax(_o1[0], 1), np.argmax(_o2[0], 1)
-
-                for i, _oo1 in enumerate(_o1):
-                    if _oo1 > 0:
-                        for j, _oo2 in enumerate(_o2[i:]):
-                            if _oo2 == _oo1:
-                                _object = text_in[i: i+j+1]
-                                _predicate = id2predicate[_oo1]
-                                # print((_subject, _predicate, _object))
-                                R.append((_subject, _predicate, _object))
-                                break
-        _kk1s.append(_kk1.data.cpu().numpy())
-    _kk1s = np.array(_kk1s)
-    return list(set(R))
-
-
-
-def evaluate():
+def evaluate(tokenizer, subject_model, object_model):
     A, B, C = 1e-10, 1e-10, 1e-10
     cnt = 0
     for d in tqdm(iter(dev_data)):
-        R = set(extract_items(d['text']))
+        if config.debug_mode:
+            if cnt > 1:
+                break
+        R = set(extract_items(d['text'], tokenizer, subject_model, object_model, id2predicate))
         T = set([tuple(i) for i in d['spo_list']])
         A += len(R & T)
         B += len(R)
@@ -115,6 +66,7 @@ def evaluate():
         #     print('iter: %d f1: %.4f, precision: %.4f, recall: %.4f\n' % (cnt, 2 * A / (B + C), A / B, A / C))
         cnt += 1
     return 2 * A / (B + C), A / B, A / C
+
 
 if __name__ == '__main__':
     bert_tokenizer = BERT_TOKENIZER
@@ -209,7 +161,7 @@ if __name__ == '__main__':
 
         torch.save(s_m, 'models_real/s_'+str(i)+'.pkl')
         torch.save(po_m, 'models_real/po_'+str(i)+'.pkl')
-        f1, precision, recall = evaluate()
+        f1, precision, recall = evaluate(bert_tokenizer, s_m, po_m)
 
         print("epoch:", i, "loss:", loss_sum.data)
 
