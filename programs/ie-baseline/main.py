@@ -161,7 +161,7 @@ if __name__ == '__main__':
             loss_sum.backward()
             optimizer.step()
 
-            if step % 1000 == 0:
+            if step % 200 == 0:
                 print("epoch:", i, ", batch", step, "loss:", loss_sum.data)
                 writer.add_scalar('batch/loss', loss_sum.data)
                 f1, precision, recall = evaluate(bert_tokenizer, s_m, po_m, batch_eval=True)
