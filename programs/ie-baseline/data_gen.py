@@ -11,7 +11,7 @@ file_dir = os.path.dirname(os.path.realpath(__file__))
 generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
 id2predicate, predicate2id = json.load(open(generated_schema_path))
 
-MAX_SENTENCE_LEN = 150 # around 1.5% of the sentences would be truncated
+MAX_SENTENCE_LEN = 302 # around 1.5% of the sentences would be truncated
     
 class BertDataGenerator:
     def __init__(self, data, tokenizer, batch_size=64):
@@ -27,7 +27,6 @@ class BertDataGenerator:
 
     def pro_res(self):
         idxs = list(range(len(self.data)))
-        # print(idxs)
         np.random.shuffle(idxs)
         T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
         attention_masks = []
