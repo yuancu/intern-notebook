@@ -54,7 +54,7 @@ def evaluate(tokenizer, subject_model, object_model, batch_eval=False):
     A, B, C = 1e-10, 1e-10, 1e-10
     cnt = 0
     for d in tqdm(iter(dev_data)):
-        if batch_eval and cnt == 1000: # use only 1000 samples to eval loss in batch
+        if batch_eval and cnt == 100: # use only 1000 samples to eval loss in batch
             break
         if config.debug_mode:
             if cnt > 1:
