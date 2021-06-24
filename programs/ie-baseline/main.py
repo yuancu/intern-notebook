@@ -17,9 +17,10 @@ import time
 from transformers import BertTokenizer
 from data_gen import BertDataGenerator, MyDataset, collate_fn
 from model_bert_based import SubjectModel, ObjectModel
+from data_gen import MAX_SENTENCE_LEN
 
 BERT_MODEL_NAME = "hfl/chinese-bert-wwm-ext" # bert-base-chinese
-
+BERT_TOKENIZER = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
 # for macOS compatibility
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
@@ -62,9 +63,12 @@ num_classes = len(id2predicate)
 
 def extract_items(text_in):
     R = []
-    _s = [char2id.get(c, 1) for c in text_in]
-    _s = np.array([_s])
-    _k1, _k2, t, t_max, mask = s_m(torch.LongTensor(_s).to(device))
+    output = BERT_TOKENIZER.encode_plus(text_in, max_length=MAX_SENTENCE_LEN, truncation=True, 
+                    pad_to_max_length=True, return_tensors="pt")
+    _s = output['input_ids']
+    attention_mask = output['attention_mask']
+    attention_mask = attention_mask.unsqueeze(dim=2)
+    _k1, _k2, t, t_max= s_m(_s.to(device), attention_mask.to(device))
     _k1, _k2 = _k1[0, :, 0], _k2[0, :, 0]
     _kk1s = []
     for i, _kk1 in enumerate(_k1):
@@ -113,7 +117,7 @@ def evaluate():
     return 2 * A / (B + C), A / B, A / C
 
 if __name__ == '__main__':
-    bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
+    bert_tokenizer = BERT_TOKENIZER
     dg = BertDataGenerator(train_data, bert_tokenizer)
     T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res()
     # print("len",len(T))
