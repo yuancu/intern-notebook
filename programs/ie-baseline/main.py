@@ -50,10 +50,12 @@ id2char, char2id = json.load(open(generated_char_path))
 num_classes = len(id2predicate)
 
 
-def evaluate(tokenizer, subject_model, object_model):
+def evaluate(tokenizer, subject_model, object_model, batch_eval=False):
     A, B, C = 1e-10, 1e-10, 1e-10
     cnt = 0
     for d in tqdm(iter(dev_data)):
+        if batch_eval and cnt == 1000: # use only 1000 samples to eval loss in batch
+            break
         if config.debug_mode:
             if cnt > 1:
                 break
@@ -159,6 +161,14 @@ if __name__ == '__main__':
             loss_sum.backward()
             optimizer.step()
 
+            if step % 1000 == 0:
+                print("epoch:", i, ", batch", step, "loss:", loss_sum.data)
+                writer.add_scalar('batch/loss', loss_sum.data)
+                f1, precision, recall = evaluate(bert_tokenizer, s_m, po_m, batch_eval=True)
+                writer.add_scalar('batch/f1', f1)
+                writer.add_scalar('batch/precision', precision)
+                writer.add_scalar('batch/recall', recall)
+
         torch.save(s_m, 'models_real/s_'+str(i)+'.pkl')
         torch.save(po_m, 'models_real/po_'+str(i)+'.pkl')
         f1, precision, recall = evaluate(bert_tokenizer, s_m, po_m)
@@ -168,7 +178,7 @@ if __name__ == '__main__':
         epoch_end_time = time.time()
         epoch_time_elapsed = epoch_end_time - epoch_start_time
         print("epoch {} used {} seconds (with bsz={})".format(i, epoch_time_elapsed, BATCH_SIZE))
-        writer.add_scalar('Loss/train', loss_sum.data, i)
+        writer.add_scalar('epoch/loss', loss_sum.data, i)
         writer.add_scalar('f1', f1, i)
         writer.add_scalar('precision', precision, i)
         writer.add_scalar('recall', recall, i)
