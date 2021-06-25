@@ -23,7 +23,7 @@ def seq_max_pool(x):
     """
     seq, mask = x
     seq = seq - (1 - mask) * 1e10
-    return torch.max(seq, 1)
+    return torch.max(seq, dim=1)
 
 
 def seq_and_vec(x):
@@ -82,13 +82,13 @@ class SubjectModel(nn.Module):
             nn.Linear(word_emb_size, 1),
         )
 
-    def forward(self, t, att_mask):
+    def forward(self, text, att_mask):
         """
         Performs forward and backward propagation and updates weights
         
         Parameters
         ----------
-        t: tensor
+        text: tensor
             (batch_size, max_len) a batch of indexed texts
             
         Returns
@@ -96,7 +96,7 @@ class SubjectModel(nn.Module):
         loss: float
             Cross-entropy loss
         """        
-        output = self.bert(t)
+        output = self.bert(text)
         # hidden_states: (batch_size, sequence_length, hidden_size=768)
         #       Sequence of hidden-states at the output of the last layer of the model.
         hidden_states = output['last_hidden_state']
@@ -104,7 +104,7 @@ class SubjectModel(nn.Module):
         #       Last layer hidden-state of the first token of the sequence 
         #       (classification token) further processed by a Linear layer and a Tanh 
         #       activation function
-        pooler_output = output['pooler_output']
+        # pooler_output = output['pooler_output']
 
 
         t_max, t_max_index = seq_max_pool([hidden_states, att_mask])
