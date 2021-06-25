@@ -148,14 +148,14 @@ class ObjectModel(nn.Module):
             # nn.Softmax(),
         )
 
-    def forward(self, t, t_max, k1, k2):
+    def forward(self, hidden_states, t_max, subject_start_pos, subject_end_pos):
 
-        k1 = seq_gather([t, k1])
+        subject_start_pos = seq_gather([hidden_states, subject_start_pos])
 
-        k2 = seq_gather([t, k2])
+        subject_end_pos = seq_gather([hidden_states, subject_end_pos])
 
-        k = torch.cat([k1, k2], 1)
-        h = seq_and_vec([t, t_max])
+        k = torch.cat([subject_start_pos, subject_end_pos], 1)
+        h = seq_and_vec([hidden_states, t_max])
         h = seq_and_vec([h, k])
         h = h.permute(0, 2, 1)
         h = self.conv1(h)

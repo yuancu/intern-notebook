@@ -123,16 +123,16 @@ if __name__ == '__main__':
 
             att_mask = att_mask.unsqueeze(dim=2)
 
-            predicted_subject_start, predicted_subject_end, t, t_max = s_m(text, att_mask)
+            predicted_subject_start, predicted_subject_end, hidden_states, t_max = s_m(text, att_mask)
 
-            t, t_max, subject_start_pos, subject_end_pos = t.to(device), t_max.to(
+            hidden_states, t_max, subject_start_pos, subject_end_pos = hidden_states.to(device), t_max.to(
                 device), subject_start_pos.to(device), subject_end_pos.to(device)
-            po_1, po_2 = po_m(t, t_max, subject_start_pos, subject_end_pos)
+            predicted_object_start, predicted_object_end = po_m(hidden_states, t_max, subject_start_pos, subject_end_pos)
 
             predicted_subject_start = predicted_subject_start.to(device)
             predicted_subject_end = predicted_subject_end.to(device)
-            po_1 = po_1.to(device)
-            po_2 = po_2.to(device)
+            predicted_object_start = predicted_object_start.to(device)
+            predicted_object_end = predicted_object_end.to(device)
 
             subject_start = torch.unsqueeze(subject_start, 2)
             subject_end = torch.unsqueeze(subject_end, 2)
@@ -142,12 +142,12 @@ if __name__ == '__main__':
             s2_loss = b_loss(predicted_subject_end, subject_end)
             s2_loss = torch.sum(s2_loss.mul(att_mask))/torch.sum(att_mask)
 
-            po_1 = po_1.permute(0, 2, 1)
-            po_2 = po_2.permute(0, 2, 1)
+            predicted_object_start = predicted_object_start.permute(0, 2, 1)
+            predicted_object_end = predicted_object_end.permute(0, 2, 1)
 
-            o1_loss = loss(po_1, object_start)
+            o1_loss = loss(predicted_object_start, object_start)
             o1_loss = torch.sum(o1_loss.mul(att_mask[:, :, 0])) / torch.sum(att_mask)
-            o2_loss = loss(po_2, object_end)
+            o2_loss = loss(predicted_object_end, object_end)
             o2_loss = torch.sum(o2_loss.mul(att_mask[:, :, 0])) / torch.sum(att_mask)
 
             loss_sum = 2.5 * (s1_loss + s2_loss) + (o1_loss + o2_loss)
