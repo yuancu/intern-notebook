@@ -85,19 +85,19 @@ if __name__ == '__main__':
     )
 
     # print("len",len(id2char))
-    s_m = SubjectModel(WORD_EMB_SIZE).to(device)
-    po_m = ObjectModel(WORD_EMB_SIZE, 49).to(device)
+    subject_model = SubjectModel(WORD_EMB_SIZE).to(device)
+    object_model = ObjectModel(WORD_EMB_SIZE, 49).to(device)
 
     if torch.cuda.device_count() > 1:
         print('Using', torch.cuda.device_count(), "GPUs!")
-        s_m = nn.DataParallel(s_m)
-        po_m = nn.DataParallel(po_m)
+        subject_model = nn.DataParallel(subject_model)
+        object_model = nn.DataParallel(object_model)
 
-    s_m = s_m.to(device)
-    po_m = po_m.to(device)
+    subject_model = subject_model.to(device)
+    object_model = object_model.to(device)
     
-    params = list(s_m.parameters())
-    params += list(po_m.parameters())
+    params = list(subject_model.parameters())
+    params += list(object_model.parameters())
     optimizer = torch.optim.Adam(params, lr=0.001)
 
     loss = torch.nn.CrossEntropyLoss().to(device)
@@ -123,11 +123,11 @@ if __name__ == '__main__':
 
             att_mask = att_mask.unsqueeze(dim=2)
 
-            predicted_subject_start, predicted_subject_end, hidden_states, t_max = s_m(text, att_mask)
+            predicted_subject_start, predicted_subject_end, hidden_states, t_max = subject_model(text, att_mask)
 
             hidden_states, t_max, subject_start_pos, subject_end_pos = hidden_states.to(device), t_max.to(
                 device), subject_start_pos.to(device), subject_end_pos.to(device)
-            predicted_object_start, predicted_object_end = po_m(hidden_states, t_max, subject_start_pos, subject_end_pos)
+            predicted_object_start, predicted_object_end = object_model(hidden_states, t_max, subject_start_pos, subject_end_pos)
 
             predicted_subject_start = predicted_subject_start.to(device)
             predicted_subject_end = predicted_subject_end.to(device)
@@ -164,14 +164,14 @@ if __name__ == '__main__':
             if step % 200 == 0:
                 print("epoch:", i, ", batch", step, "loss:", loss_sum.data)
                 writer.add_scalar('batch/loss', loss_sum.data)
-                f1, precision, recall = evaluate(bert_tokenizer, s_m, po_m, batch_eval=True)
+                f1, precision, recall = evaluate(bert_tokenizer, subject_model, object_model, batch_eval=True)
                 writer.add_scalar('batch/f1', f1)
                 writer.add_scalar('batch/precision', precision)
                 writer.add_scalar('batch/recall', recall)
 
-        torch.save(s_m, 'models_real/s_'+str(i)+'.pkl')
-        torch.save(po_m, 'models_real/po_'+str(i)+'.pkl')
-        f1, precision, recall = evaluate(bert_tokenizer, s_m, po_m)
+        torch.save(subject_model, 'models_real/s_'+str(i)+'.pkl')
+        torch.save(object_model, 'models_real/po_'+str(i)+'.pkl')
+        f1, precision, recall = evaluate(bert_tokenizer, subject_model, object_model)
 
         print("epoch:", i, "loss:", loss_sum.data)
 

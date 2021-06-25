@@ -64,25 +64,13 @@ class SubjectModel(nn.Module):
 
         self.bert = BertModel.from_pretrained(BERT_MODEL_NAME)
 
-        self.conv1 = nn.Sequential(
-            nn.Conv1d(
-                in_channels=word_emb_size * 2,  # 输入的深度
-                out_channels=word_emb_size,  # filter 的个数，输出的高度
-                kernel_size=3,  # filter的长与宽
-                stride=1,  # 每隔多少步跳一下
-                padding=1,  # 周围围上一圈 if stride= 1, pading=(kernel_size-1)/2
-            ),
-            nn.ReLU(),
-        )
-        self.fc_ps1 = nn.Sequential(
-            nn.Linear(word_emb_size, 1),
+        # layer for subject prediction
+        self.dense = nn.Sequential(
+            nn.Linear(word_emb_size, 2),
+            nn.Sigmoid()
         )
 
-        self.fc_ps2 = nn.Sequential(
-            nn.Linear(word_emb_size, 1),
-        )
-
-    def forward(self, text, att_mask):
+    def forward(self, text):
         """
         Performs forward and backward propagation and updates weights
         
@@ -93,34 +81,23 @@ class SubjectModel(nn.Module):
             
         Returns
         -------
-        loss: float
-            Cross-entropy loss
+        subject_preds: tensor
+        hidden_states: tensor
         """        
-        output = self.bert(text)
+        encoded = self.bert(text)
         # hidden_states: (batch_size, sequence_length, hidden_size=768)
         #       Sequence of hidden-states at the output of the last layer of the model.
-        hidden_states = output['last_hidden_state']
+        hidden_states = encoded['last_hidden_state']
         # pooler_output: (batch_size, hidden_size)
         #       Last layer hidden-state of the first token of the sequence 
         #       (classification token) further processed by a Linear layer and a Tanh 
         #       activation function
         # pooler_output = output['pooler_output']
 
+        subject_preds = self.dense(hidden_states)
+        subject_preds = subject_preds**2
 
-        t_max, t_max_index = seq_max_pool([hidden_states, att_mask])
-
-        h = seq_and_vec([hidden_states, t_max])
-
-        h = h.permute(0, 2, 1)
-
-        h = self.conv1(h)
-
-        h = h.permute(0, 2, 1)
-
-        ps1 = self.fc_ps1(h)
-        ps2 = self.fc_ps2(h)
-
-        return [ps1, ps2, hidden_states, t_max]
+        return subject_preds, hidden_states
 
 
 class ObjectModel(nn.Module):
@@ -148,7 +125,7 @@ class ObjectModel(nn.Module):
             # nn.Softmax(),
         )
 
-    def forward(self, hidden_states, t_max, subject_start_pos, subject_end_pos):
+    def forward(self, hidden_states, subject_start_pos, subject_end_pos):
 
         subject_start_pos = seq_gather([hidden_states, subject_start_pos])
 
