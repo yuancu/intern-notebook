@@ -13,6 +13,7 @@ import os
 import torch.utils.data as Data
 import torch.nn.functional as F
 import time
+from torch.utils.tensorboard import SummaryWriter
 
 # for macOS compatibility
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -207,7 +208,7 @@ def extract_items(text_in):
 def evaluate():
     A, B, C = 1e-10, 1e-10, 1e-10
     cnt = 0
-    for d in tqdm(iter(dev_data)):
+    for d in tqdm(iter(dev_data), desc="Eval"):
         R = set(extract_items(d['text']))
         T = set([tuple(i) for i in d['spo_list']])
         A += len(R & T)
@@ -219,6 +220,10 @@ def evaluate():
     return 2 * A / (B + C), A / B, A / C
 
 if __name__ == '__main__':
+    
+    
+    writer = SummaryWriter(log_dir='./logs')
+
     dg = DataGenerator(train_data)
     T, S1, S2, K1, K2, O1, O2 = dg.pro_res()
     # print("len",len(T))
@@ -248,7 +253,7 @@ if __name__ == '__main__':
     best_epoch = 0
 
     for i in range(EPOCH_NUM):
-        for step, loader_res in tqdm(iter(enumerate(loader))):
+        for step, loader_res in tqdm(iter(enumerate(loader)), desc="Train"):
             # print(get_now_time())
             t_s = loader_res["T"].to(device)
             k1 = loader_res["K1"].to(device)
@@ -299,6 +304,10 @@ if __name__ == '__main__':
         torch.save(s_m, 'models_real/s_'+str(i)+'.pkl')
         torch.save(po_m, 'models_real/po_'+str(i)+'.pkl')
         f1, precision, recall = evaluate()
+        writer.add_scalar('Loss/train', loss_sum.data, i)
+        writer.add_scalar('f1', f1, i)
+        writer.add_scalar('precision', precision, i)
+        writer.add_scalar('recall', recall, i)
 
         print("epoch:", i, "loss:", loss_sum.data)
 
