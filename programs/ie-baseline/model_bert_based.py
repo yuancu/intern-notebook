@@ -86,7 +86,9 @@ class SubjectModel(nn.Module):
         Returns
         -------
         subject_preds: tensor
+            (batch_size, sent_len, 2)
         hidden_states: tensor
+            (batch_size, sent_len, embed_size)
         """        
         encoded = self.bert(text)
         # hidden_states: (batch_size, sequence_length, hidden_size=768)

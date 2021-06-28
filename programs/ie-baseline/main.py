@@ -1,6 +1,7 @@
 #! -*- coding:utf-8 -*-
 
 import json
+from random import shuffle
 from tqdm import tqdm
 import torch
 import torch.utils.data as Data
@@ -9,9 +10,9 @@ import os
 import torch.nn as nn
 import time
 from transformers import BertTokenizer
-from data_gen import BertDataGenerator, MyDataset, collate_fn
+from data_gen import BertDataGenerator, DevDataGenerator, MyDataset, MyDevDataset, collate_fn, dev_collate_fn
 from model_bert_based import SubjectModel, ObjectModel
-from utils import extract_items
+from utils import extract_items, para_eval
 import config
 from config import create_parser
 
@@ -77,13 +78,23 @@ if __name__ == '__main__':
     dg = BertDataGenerator(train_data, bert_tokenizer)
     T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res()
     # print("len",len(T))
-    torch_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2, attention_masks)
-    loader = Data.DataLoader(
-        dataset=torch_dataset,      # torch TensorDataset format
+    train_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2, attention_masks)
+    train_loader = Data.DataLoader(
+        dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=8,
         collate_fn=collate_fn,      # subprocesses for loading data
+    )
+
+    dev_generator = DevDataGenerator(dev_data, bert_tokenizer)
+    dev_dataset = MyDevDataset(*dev_generator.pro_res())
+    dev_loader = Data.DataLoader(
+        dataset=dev_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=8,
+        collate_fn=dev_collate_fn
     )
 
     # print("len",len(id2char))
@@ -97,6 +108,8 @@ if __name__ == '__main__':
 
     subject_model = subject_model.to(device)
     object_model = object_model.to(device)
+
+    # para_eval(subject_model, object_model, dev_loader, id2predicate)
     
     params = list(subject_model.parameters())
     params += list(object_model.parameters())
@@ -104,18 +117,18 @@ if __name__ == '__main__':
 
     # loss = torch.nn.CrossEntropyLoss().to(device)
     # b_loss = torch.nn.BCEWithLogitsLoss().to(device)
-    loss_fn = torch.nn.BCELoss().to(device)
+    loss_fn = torch.nn.BCELoss(reduction="none").to(device)
 
     best_f1 = 0
     best_epoch = 0
 
     for i in range(EPOCH_NUM):
         epoch_start_time = time.time()
-        for step, loader_res in tqdm(iter(enumerate(loader))):
+        for step, loader_res in tqdm(iter(enumerate(train_loader)), desc='Training'):
             # print(get_now_time())
             # dim of following data's 0-dim is batch size
             # max_len = 300, 句子最长为300
-            text = loader_res["T"].to(device) # text (in the form of index, zero-padding)
+            tokens = loader_res["T"].to(device) # text (in the form of index, zero-padding)
             subject_start_pos = loader_res["K1"].to(device) # subject start index
             subject_end_pos = loader_res["K2"].to(device) # subject end index
             subject_start = loader_res["S1"].to(device) # subject start in 1-0 vector (may have multiple subject)
@@ -124,38 +137,27 @@ if __name__ == '__main__':
             object_end = loader_res["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
             att_mask = loader_res['masks'].to(device)
 
-            att_mask = att_mask.unsqueeze(dim=2)
+            att_mask = att_mask
 
-            subject_preds, hidden_states = subject_model(text)
+            subject_preds, hidden_states = subject_model(tokens) 
 
             object_preds = object_model(hidden_states, subject_start_pos, subject_end_pos) # (bsz, sent_len, num_class, 2)
 
             # subject_labels = torch.stack((subject_start, subject_end), dim=2) # (bsz, sent_len, 2)
 
             s1_loss = loss_fn(subject_preds[:,:,0], subject_start)
-            s1_loss = torch.sum(s1_loss.mul(att_mask))/torch.sum(att_mask)
+            s1_loss = torch.sum(s1_loss * att_mask) / torch.sum(att_mask)
             s2_loss = loss_fn(subject_preds[:,:,1], subject_end)
-            s2_loss = torch.sum(s2_loss.mul(att_mask))/torch.sum(att_mask)
+            s2_loss = torch.sum(s2_loss * att_mask)/torch.sum(att_mask)
 
-            # predicted_object_start = predicted_object_start.permute(0, 2, 1)
-            # predicted_object_end = predicted_object_end.permute(0, 2, 1)
+            o1_loss = loss_fn(object_preds[:,:,:,0], object_start)
+            o1_loss = torch.mean(o1_loss, dim=2) 
+            o1_loss = torch.sum(o1_loss * att_mask) / torch.sum(att_mask)
+            o2_loss = loss_fn(object_preds[:,:,:,1], object_end)
+            o2_loss = torch.mean(o2_loss, dim=2)
+            o2_loss = torch.sum(o2_loss * att_mask) / torch.sum(att_mask)
 
-
-# subject_labels.shape (None, None, 2)
-# subject_loss.shape (None, None, 2)
-# meaned subject_loss.shape (None, None)
-# avged subject_loss.shape ()
-# object_labels.shape (None, None, 49, 2)
-# object_loss.shape (None, None, 49, 2)
-# meaned object_loss.shape (None, None)
-# avged object_loss.shape ()
-
-            o1_loss = loss(object_preds[:,:,:,0], object_start)
-            o1_loss = torch.sum(o1_loss.mul(att_mask[:, :, 0])) / torch.sum(att_mask)
-            o2_loss = loss(object_preds[:,:,:,1], object_end)
-            o2_loss = torch.sum(o2_loss.mul(att_mask[:, :, 0])) / torch.sum(att_mask)
-
-            loss_sum = 2.5 * (s1_loss + s2_loss) + (o1_loss + o2_loss)
+            loss_sum = s1_loss + s2_loss + o1_loss + o2_loss
 
             # if step % 500 == 0:
             # 	torch.save(s_m, 'models_real/s_'+str(step)+"epoch_"+str(i)+'.pkl')
@@ -169,10 +171,10 @@ if __name__ == '__main__':
             if step % 200 == 0:
                 print("epoch:", i, ", batch", step, "loss:", loss_sum.data)
                 writer.add_scalar('batch/loss', loss_sum.data)
-                f1, precision, recall = evaluate(bert_tokenizer, subject_model, object_model, batch_eval=True)
-                writer.add_scalar('batch/f1', f1)
-                writer.add_scalar('batch/precision', precision)
-                writer.add_scalar('batch/recall', recall)
+                # f1, precision, recall = evaluate(bert_tokenizer, subject_model, object_model, batch_eval=True)
+                # writer.add_scalar('batch/f1', f1)
+                # writer.add_scalar('batch/precision', precision)
+                # writer.add_scalar('batch/recall', recall)
 
         torch.save(subject_model, 'models_real/s_'+str(i)+'.pkl')
         torch.save(object_model, 'models_real/po_'+str(i)+'.pkl')

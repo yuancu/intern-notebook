@@ -13,6 +13,58 @@ generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
 id2predicate, predicate2id = json.load(open(generated_schema_path))
 MAX_SENTENCE_LEN = config.max_sentence_len
 
+class DevDataGenerator:
+    def __init__(self, data, tokenizer):
+        self.data = data
+        self.tokenizer = tokenizer
+
+    def __len__(self):
+        return len(self.data)
+
+    def pro_res(self):
+        idxs = list(range(len(self.data)))
+        np.random.shuffle(idxs)
+        if config.debug_mode:
+            print("Training with only one sample")
+            idxs = idxs[:2]
+        texts, tokens, spoes, att_masks = [], [], [], []
+        for i in tqdm(idxs, desc='Preparing Dev Data'):
+            d = self.data[i]
+            text = d['text']
+            output = self.tokenizer.encode_plus(text, max_length=MAX_SENTENCE_LEN, truncation=True, 
+                pad_to_max_length=True, return_tensors="pt")
+            token = output['input_ids']
+            att_mask = output['attention_mask']
+            texts.append(text)
+            tokens.append(token)
+            att_masks.append(att_mask)
+            print(i, d['spo_list'])
+            spoes.append(d['spo_list'])
+        return texts, tokens, spoes, att_masks
+
+class MyDevDataset(Data.Dataset):
+    def __init__(self, texts, tokens, spoes, att_masks):
+        super().__init__()
+        self.texts = texts
+        self.tokens = tokens
+        self.spoes = spoes
+        self.att_masks = att_masks
+
+    def __getitem__(self, index):
+        return self.texts[index], self.tokens[index], self.spoes[index], self.att_masks[index]
+
+    def __len__(self):
+        return len(self.texts)
+
+
+def dev_collate_fn(data):
+    texts = [item[0] for item in data]
+    tokens = [item[1] for item in data]
+    tokens = torch.cat(tokens, dim=0)
+    spoes = [item[2] for item in data]
+    att_masks = [item[3] for item in data]
+    return texts, tokens, spoes, att_masks
+
 class BertDataGenerator:
     def __init__(self, data, tokenizer, batch_size=64):
         self.data = data
@@ -129,8 +181,8 @@ def collate_fn(data):
         'S2': torch.FloatTensor(s2),
         'K1': torch.LongTensor(k1),
         'K2': torch.LongTensor(k2),
-        'O1': torch.LongTensor(o1),
-        'O2': torch.LongTensor(o2),
+        'O1': torch.FloatTensor(o1),
+        'O2': torch.FloatTensor(o2),
         'masks': torch.LongTensor(attention_masks)
     }
 
