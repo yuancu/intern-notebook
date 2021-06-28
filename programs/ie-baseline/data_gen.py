@@ -66,11 +66,10 @@ class BertDataGenerator:
                 k1, k2 = choice(list(items.keys()))
                 # o1: zero vector, the start of each O is marked with its predicate ID
                 # o2: zero vector, the end of each O is marked with its predicate ID
-                o1, o2 = [0] * MAX_SENTENCE_LEN, [0] * MAX_SENTENCE_LEN  # 0是unk类（共49+1个类）
+                o1, o2 = np.zeros((MAX_SENTENCE_LEN, len(predicate2id)+1)), np.zeros((MAX_SENTENCE_LEN, len(predicate2id)+1))  # 0是unk类（共49+1个类）
                 for j in items[(k1, k2)]:
-                    if(j[1] < MAX_SENTENCE_LEN):
-                        o1[j[0]] = j[2]
-                        o2[j[1]-1] = j[2]
+                    o1[j[0], j[2]] = 1
+                    o2[j[1]-1, j[2]] = 1
                 S1.append(s1)
                 S2.append(s2)
                 K1.append([k1])
@@ -85,8 +84,6 @@ class BertDataGenerator:
         T = np.array(T)
         S1 = np.array(S1)
         S2 = np.array(S2)
-        O1 = np.array(O1)
-        O2 = np.array(O2)
         K1, K2 = np.array(K1), np.array(K2)
         attention_masks = np.array(attention_masks)
         return [T, S1, S2, K1, K2, O1, O2, attention_masks]
@@ -192,10 +189,10 @@ class DataGenerator:
                 k1, k2 = choice(list(items.keys()))
                 # o1: zero vector, the start of each O is marked with its predicate ID
                 # o2: zero vector, the end of each O is marked with its predicate ID
-                o1, o2 = [0] * len(text), [0] * len(text)  # 0是unk类（共49+1个类）
+                o1, o2 = torch.zeros(len(text), len(predicate2id)), torch.zeros(len(text), len(predicate2id))  # 0是unk类（共49+1个类）
                 for j in items[(k1, k2)]:
-                    o1[j[0]] = j[2]
-                    o2[j[1]-1] = j[2]
+                    o1[j[0], j[2]-1] = 1
+                    o2[j[1]-1, j[2]] = 1
                 S1.append(s1)
                 S2.append(s2)
                 K1.append([k1])

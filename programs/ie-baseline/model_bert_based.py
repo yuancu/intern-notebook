@@ -1,3 +1,5 @@
+from torch.nn.modules.linear import Linear
+from data_gen import MAX_SENTENCE_LEN
 import torch
 from torch import nn
 import numpy as np
@@ -6,6 +8,8 @@ from transformers import BertTokenizer, PreTrainedModel, BertModel
 import config
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+MAX_SENTENCE_LEN = config.max_sentence_len
+WORD_EMB_SIZE = config.word_emb_size
 
 ###################
 # BERT related code
@@ -100,45 +104,75 @@ class SubjectModel(nn.Module):
         return subject_preds, hidden_states
 
 
+class CondLayerNorm(nn.Module):
+    def __init__(self, sent_len, embed_size, encoder_hidden=None):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(normalized_shape=embed_size, elementwise_affine=False)
+        if encoder_hidden:
+            self.gamma_encoder = nn.Sequential(
+                nn.Linear(in_features=embed_size*2, out_features= encoder_hidden),
+                nn.Linear(in_features=encoder_hidden, out_features=embed_size)
+            )
+            self.beta_encoder = nn.Sequential(
+                nn.Linear(in_features=embed_size*2, out_features= encoder_hidden),
+                nn.Linear(in_features=encoder_hidden, out_features=embed_size)
+            )
+        else:
+            self.gamma_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
+            self.beta_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
+        self.gamma = torch.ones(embed_size) # scale factor
+        self.beta = torch.zeros(embed_size) # bias factor
+
+    def forward(self, hidden_states, subject):
+        """
+        Perform layer normalization with conditions derived from subject embeddings
+        
+        Parameters
+        ----------
+        hidden_states: tensor
+            (batch_size, sent_len, embed_size) hidden states generated from bert
+        subject: tensor
+            (batch_size, 2*embed_size) concatenation of the start and end of a sampled subject
+            
+        Returns
+        -------
+        normalized: tensor
+            (batch_size, sent_len, embed_size) conditional-normalized hidden states
+        """       
+        std, mean = torch.std_mean(hidden_states, dim=-1, unbiased=False, keepdim=True)
+        gamma = self.gamma_encoder(subject) + self.gamma
+        beta = self.beta_encoder(subject) + self.beta
+        normalized = (hidden_states - mean) / std * gamma + beta
+        return normalized
+
+
 class ObjectModel(nn.Module):
     def __init__(self, word_emb_size, num_classes):
         super(ObjectModel, self).__init__()
+        self.num_classes = num_classes
 
-        self.conv1 = nn.Sequential(
-            nn.Conv1d(
-                in_channels=word_emb_size*4,  # 输入的深度
-                out_channels=word_emb_size,  # filter 的个数，输出的高度
-                kernel_size=3,  # filter的长与宽
-                stride=1,  # 每隔多少步跳一下
-                padding=1,  # 周围围上一圈 if stride= 1, pading=(kernel_size-1)/2
-            ),
-            nn.ReLU(),
-        )
+        self.cond_layer_norm = CondLayerNorm(MAX_SENTENCE_LEN, WORD_EMB_SIZE)
 
-        self.fc_ps1 = nn.Sequential(
-            nn.Linear(word_emb_size, num_classes+1),
-            # nn.Softmax(),
-        )
-
-        self.fc_ps2 = nn.Sequential(
-            nn.Linear(word_emb_size, num_classes+1),
-            # nn.Softmax(),
+        self.pred_object = nn.Sequential(
+            nn.Linear(in_features=word_emb_size, out_features=num_classes*2),
+            nn.Sigmoid()
         )
 
     def forward(self, hidden_states, subject_start_pos, subject_end_pos):
 
-        subject_start_pos = seq_gather([hidden_states, subject_start_pos])
+        subject_start = seq_gather([hidden_states, subject_start_pos]) # embedding of sub_start (bsz, emb_size)
 
-        subject_end_pos = seq_gather([hidden_states, subject_end_pos])
+        subject_end = seq_gather([hidden_states, subject_end_pos]) # embedding of sub_end
 
-        k = torch.cat([subject_start_pos, subject_end_pos], 1)
-        h = seq_and_vec([hidden_states, t_max])
-        h = seq_and_vec([h, k])
-        h = h.permute(0, 2, 1)
-        h = self.conv1(h)
-        h = h.permute(0, 2, 1)
+        subject = torch.cat([subject_start, subject_end], 1)  # (bsz, emd_size*2)
+        
+        normalized = self.cond_layer_norm(hidden_states, subject)
 
-        po1 = self.fc_ps1(h)
-        po2 = self.fc_ps2(h)
+        # probs shape: (batch_size, sent_len, 2*len(predicates)) 
+        # for every predicates, predicate probable start(s) and end(s) of objects
+        probs = self.pred_object(normalized)
+        probs = probs ** 4
 
-        return [po1, po2]
+        preds = probs.reshape((probs.shape[0], probs.shape[1], -1, 2)) # reshaped to (bsz, sent_len, pred_len, 2)
+
+        return preds

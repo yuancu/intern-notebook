@@ -8,6 +8,7 @@ max_sentence_len = 302
 batch_size = 64
 bert_model_name = "hfl/chinese-bert-wwm-ext" # bert-base-chinese
 debug_mode = False
+num_classes = 0
 
 def create_parser():
     parser = argparse.ArgumentParser(description='Process data')

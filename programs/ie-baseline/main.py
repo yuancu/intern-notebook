@@ -47,7 +47,9 @@ dev_data = json.load(open(dev_path))
 id2predicate, predicate2id = json.load(open(generated_schema_path))
 id2predicate = {int(i): j for i, j in id2predicate.items()}
 id2char, char2id = json.load(open(generated_char_path))
-num_classes = len(id2predicate)
+
+NUM_CLASSES = len(predicate2id) + 1
+config.num_classes = NUM_CLASSES
 
 
 def evaluate(tokenizer, subject_model, object_model, batch_eval=False):
@@ -86,7 +88,7 @@ if __name__ == '__main__':
 
     # print("len",len(id2char))
     subject_model = SubjectModel(WORD_EMB_SIZE).to(device)
-    object_model = ObjectModel(WORD_EMB_SIZE, 49).to(device)
+    object_model = ObjectModel(WORD_EMB_SIZE, NUM_CLASSES).to(device)
 
     if torch.cuda.device_count() > 1:
         print('Using', torch.cuda.device_count(), "GPUs!")
@@ -100,8 +102,9 @@ if __name__ == '__main__':
     params += list(object_model.parameters())
     optimizer = torch.optim.Adam(params, lr=0.001)
 
-    loss = torch.nn.CrossEntropyLoss().to(device)
-    b_loss = torch.nn.BCEWithLogitsLoss().to(device)
+    # loss = torch.nn.CrossEntropyLoss().to(device)
+    # b_loss = torch.nn.BCEWithLogitsLoss().to(device)
+    loss_fn = torch.nn.BCELoss().to(device)
 
     best_f1 = 0
     best_epoch = 0
@@ -123,31 +126,33 @@ if __name__ == '__main__':
 
             att_mask = att_mask.unsqueeze(dim=2)
 
-            predicted_subject_start, predicted_subject_end, hidden_states, t_max = subject_model(text, att_mask)
+            subject_preds, hidden_states = subject_model(text)
 
-            hidden_states, t_max, subject_start_pos, subject_end_pos = hidden_states.to(device), t_max.to(
-                device), subject_start_pos.to(device), subject_end_pos.to(device)
-            predicted_object_start, predicted_object_end = object_model(hidden_states, t_max, subject_start_pos, subject_end_pos)
+            object_preds = object_model(hidden_states, subject_start_pos, subject_end_pos) # (bsz, sent_len, num_class, 2)
 
-            predicted_subject_start = predicted_subject_start.to(device)
-            predicted_subject_end = predicted_subject_end.to(device)
-            predicted_object_start = predicted_object_start.to(device)
-            predicted_object_end = predicted_object_end.to(device)
+            # subject_labels = torch.stack((subject_start, subject_end), dim=2) # (bsz, sent_len, 2)
 
-            subject_start = torch.unsqueeze(subject_start, 2)
-            subject_end = torch.unsqueeze(subject_end, 2)
-
-            s1_loss = b_loss(predicted_subject_start, subject_start)
+            s1_loss = loss_fn(subject_preds[:,:,0], subject_start)
             s1_loss = torch.sum(s1_loss.mul(att_mask))/torch.sum(att_mask)
-            s2_loss = b_loss(predicted_subject_end, subject_end)
+            s2_loss = loss_fn(subject_preds[:,:,1], subject_end)
             s2_loss = torch.sum(s2_loss.mul(att_mask))/torch.sum(att_mask)
 
-            predicted_object_start = predicted_object_start.permute(0, 2, 1)
-            predicted_object_end = predicted_object_end.permute(0, 2, 1)
+            # predicted_object_start = predicted_object_start.permute(0, 2, 1)
+            # predicted_object_end = predicted_object_end.permute(0, 2, 1)
 
-            o1_loss = loss(predicted_object_start, object_start)
+
+# subject_labels.shape (None, None, 2)
+# subject_loss.shape (None, None, 2)
+# meaned subject_loss.shape (None, None)
+# avged subject_loss.shape ()
+# object_labels.shape (None, None, 49, 2)
+# object_loss.shape (None, None, 49, 2)
+# meaned object_loss.shape (None, None)
+# avged object_loss.shape ()
+
+            o1_loss = loss(object_preds[:,:,:,0], object_start)
             o1_loss = torch.sum(o1_loss.mul(att_mask[:, :, 0])) / torch.sum(att_mask)
-            o2_loss = loss(predicted_object_end, object_end)
+            o2_loss = loss(object_preds[:,:,:,1], object_end)
             o2_loss = torch.sum(o2_loss.mul(att_mask[:, :, 0])) / torch.sum(att_mask)
 
             loss_sum = 2.5 * (s1_loss + s2_loss) + (o1_loss + o2_loss)
