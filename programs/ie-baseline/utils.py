@@ -24,8 +24,8 @@ def extract_spoes(texts, tokens, subject_model, object_model, id2predicate):
     batch_size = subject_preds.shape[0]
     spoes = []
     for k in range(batch_size):
-        sub_start = np.where(subject_preds[k, :, 0] > 0.6)[0]
-        sub_end = np.where(subject_preds[k, :, 1] > 0.5)[0]
+        sub_start = torch.where(subject_preds[k, :, 0] > 0.6)[0]
+        sub_end = torch.where(subject_preds[k, :, 1] > 0.5)[0]
         subjects = []
         for i in sub_start:
             j = sub_end[sub_end >= i]
@@ -40,8 +40,8 @@ def extract_spoes(texts, tokens, subject_model, object_model, id2predicate):
             extracted_sub_end = subjects[:, 1].view(-1, 1)
             object_preds = object_model(pseudo_states, extracted_sub_start, extracted_sub_end)
             for subject, object_pred in zip(subjects, object_preds):
-                obj_start = np.where(object_pred[:, :, 0] > 0.6)
-                obj_end = np.where(object_pred[:, :, 1] > 0.5)
+                obj_start = torch.where(object_pred[:, :, 0] > 0.6)
+                obj_end = torch.where(object_pred[:, :, 1] > 0.5)
                 for _start, predicate1 in zip(*obj_start):
                     for _end, predicate2 in zip(*obj_end):
                         if _start <= _end and predicate1 == predicate2:
