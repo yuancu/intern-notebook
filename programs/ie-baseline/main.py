@@ -145,6 +145,9 @@ if __name__ == '__main__':
 
             writer.add_scalar('batch/loss', loss_sum.item())
             train_tqdm.set_postfix(loss=loss_sum.item())
+            
+            if step % 100 == 0:
+                writer.flush()
 
             # if step % 500 == 0:
             # 	torch.save(s_m, 'models_real/s_'+str(step)+"epoch_"+str(i)+'.pkl')
@@ -166,9 +169,9 @@ if __name__ == '__main__':
         epoch_time_elapsed = epoch_end_time - epoch_start_time
         print("epoch {} used {} seconds (with bsz={})".format(i, epoch_time_elapsed, BATCH_SIZE))
         writer.add_scalar('epoch/loss', loss_sum.item(), i)
-        writer.add_scalar('f1', f1, i)
-        writer.add_scalar('precision', precision, i)
-        writer.add_scalar('recall', recall, i)
+        writer.add_scalar('epoch/f1', f1, i)
+        writer.add_scalar('epoch/precision', precision, i)
+        writer.add_scalar('epoch/recall', recall, i)
 
         if f1 >= best_f1:
             best_f1 = f1
