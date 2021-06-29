@@ -10,6 +10,7 @@ import os
 
 import torch.nn as nn
 import time
+from datetime import datetime
 from transformers import BertTokenizer
 from data_gen import BertDataGenerator, DevDataGenerator, MyDataset, MyDevDataset, collate_fn, dev_collate_fn
 from model_bert_based import SubjectModel, ObjectModel
@@ -38,7 +39,9 @@ EPOCH_NUM = config.epoch_num
 BATCH_SIZE = config.batch_size
 
 from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter(log_dir='./logs')
+now = datetime.now()
+dt_string = now.strftime("%m_%d_%H_%M")
+writer = SummaryWriter(log_dir='./logs/'+dt_string)
 
 file_dir = os.path.dirname(os.path.realpath(__file__))
 train_path = os.path.join(file_dir, 'generated/train_data_me.json')
