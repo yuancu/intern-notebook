@@ -56,7 +56,7 @@ config.num_classes = NUM_CLASSES
 def evaluate(tokenizer, subject_model, object_model, batch_eval=False):
     A, B, C = 1e-10, 1e-10, 1e-10
     cnt = 0
-    for d in tqdm(iter(dev_data)):
+    for d in tqdm(iter(dev_data), desc="Evaluate"):
         if batch_eval and cnt == 100: # use only 100 samples to eval loss in batch
             break
         if config.debug_mode:
@@ -139,22 +139,28 @@ if __name__ == '__main__':
 
             att_mask = att_mask
 
-            subject_preds, hidden_states = subject_model(tokens) 
+            subject_preds, hidden_states = subject_model(tokens) # (bsz)
 
             object_preds = object_model(hidden_states, subject_start_pos, subject_end_pos) # (bsz, sent_len, num_class, 2)
 
             # subject_labels = torch.stack((subject_start, subject_end), dim=2) # (bsz, sent_len, 2)
 
-            s1_loss = loss_fn(subject_preds[:,:,0], subject_start)
-            s1_loss = torch.sum(s1_loss * att_mask) / torch.sum(att_mask)
+            batch_size = tokens.shape[0]
+
+            s1_loss = loss_fn(subject_preds[:,:,0], subject_start) # (bsz, sent_len)
+            s1_loss = torch.mean(s1_loss, dim=0) # (sent_len)
+            s1_loss = torch.sum(s1_loss * att_mask) / torch.sum(att_mask) # ()
             s2_loss = loss_fn(subject_preds[:,:,1], subject_end)
+            s2_loss = torch.mean(s2_loss, dim=0)
             s2_loss = torch.sum(s2_loss * att_mask)/torch.sum(att_mask)
 
-            o1_loss = loss_fn(object_preds[:,:,:,0], object_start)
-            o1_loss = torch.mean(o1_loss, dim=2) 
-            o1_loss = torch.sum(o1_loss * att_mask) / torch.sum(att_mask)
+            o1_loss = loss_fn(object_preds[:,:,:,0], object_start) # (bsz, sent_len, n_classes)
+            o1_loss = torch.mean(o1_loss, dim=2) # (bsz, sent_len)
+            o1_loss = torch.mean(o1_loss, dim=0) # (sent_len)
+            o1_loss = torch.sum(o1_loss * att_mask) / torch.sum(att_mask) # ()
             o2_loss = loss_fn(object_preds[:,:,:,1], object_end)
             o2_loss = torch.mean(o2_loss, dim=2)
+            o2_loss = torch.mean(o2_loss, dim=0)
             o2_loss = torch.sum(o2_loss * att_mask) / torch.sum(att_mask)
 
             loss_sum = s1_loss + s2_loss + o1_loss + o2_loss
@@ -178,7 +184,8 @@ if __name__ == '__main__':
 
         torch.save(subject_model, 'models_real/s_'+str(i)+'.pkl')
         torch.save(object_model, 'models_real/po_'+str(i)+'.pkl')
-        f1, precision, recall = evaluate(bert_tokenizer, subject_model, object_model)
+        # f1, precision, recall = evaluate(bert_tokenizer, subject_model, object_model)
+        f1, precision, recall = para_eval(subject_model, object_model, dev_loader, id2predicate)
 
         print("epoch:", i, "loss:", loss_sum.data)
 
