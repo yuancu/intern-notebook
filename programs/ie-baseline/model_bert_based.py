@@ -184,7 +184,7 @@ class ObjectModel(nn.Module):
 
         subject_end = seq_gather([hidden_states, subject_end_pos]) # embedding of sub_end
 
-        subject = torch.cat([subject_start, subject_end], 1)  # (bsz, emd_size*2)
+        subject = torch.cat([subject_start, subject_end], 1).to(device)  # (bsz, emd_size*2)
         
         normalized = self.cond_layer_norm(hidden_states, subject) # (bsz, sent_len, emb_size)
 
