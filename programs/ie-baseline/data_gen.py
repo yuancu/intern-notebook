@@ -6,7 +6,9 @@ from random import choice
 import torch
 import torch.utils.data as Data
 from tqdm import tqdm
+import pickle
 import config
+import pathlib
 
 file_dir = os.path.dirname(os.path.realpath(__file__))
 generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
@@ -77,7 +79,14 @@ class BertDataGenerator:
     def __len__(self):
         return self.steps
 
-    def pro_res(self):
+    def pro_res(self, save=False, load=False):
+        if load:
+            try:
+                with open(config.processed_train_data_path, 'rb') as f:
+                    processed_train_data = pickle.load(f)
+                    return processed_train_data
+            except IOError:
+                print("processed data doesn't exist, generating...")
         idxs = list(range(len(self.data)))
         np.random.shuffle(idxs)
         if config.debug_mode:
@@ -138,7 +147,12 @@ class BertDataGenerator:
         S2 = np.array(S2)
         K1, K2 = np.array(K1), np.array(K2)
         attention_masks = np.array(attention_masks)
-        return [T, S1, S2, K1, K2, O1, O2, attention_masks]
+        processed_train_data = [T, S1, S2, K1, K2, O1, O2, attention_masks]
+        if save:
+            pathlib.Path(config.processed_train_data_dir).mkdir(parents=True, exist_ok=True) 
+            with open(config.processed_train_data_path, 'wb') as f:
+                pickle.dump(processed_train_data, f)
+        return processed_train_data
 
 
 class MyDataset(Data.Dataset):

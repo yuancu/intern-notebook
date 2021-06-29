@@ -1,7 +1,6 @@
 #! -*- coding:utf-8 -*-
 
 import json
-from random import shuffle
 from tqdm.auto import tqdm
 from tqdm.auto import trange
 import torch
@@ -62,7 +61,10 @@ config.num_classes = NUM_CLASSES
 if __name__ == '__main__':
     bert_tokenizer = BERT_TOKENIZER
     dg = BertDataGenerator(train_data, bert_tokenizer)
-    T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res()
+    if config.load_processed_data:
+        T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res(load=True)
+    else:
+        T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res(save=True)
     # print("len",len(T))
     train_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2, attention_masks)
     train_loader = Data.DataLoader(
