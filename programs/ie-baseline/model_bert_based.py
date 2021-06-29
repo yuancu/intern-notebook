@@ -155,7 +155,7 @@ class ObjectModel(nn.Module):
         super(ObjectModel, self).__init__()
         self.num_classes = num_classes
 
-        self.cond_layer_norm = CondLayerNorm(MAX_SENTENCE_LEN, WORD_EMB_SIZE).to(device)
+        self.cond_layer_norm = CondLayerNorm(MAX_SENTENCE_LEN, WORD_EMB_SIZE, encoder_hidden=WORD_EMB_SIZE//2)
 
         self.pred_object = nn.Sequential(
             nn.Linear(in_features=word_emb_size, out_features=num_classes*2),
