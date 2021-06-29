@@ -124,8 +124,8 @@ class CondLayerNorm(nn.Module):
         else:
             self.gamma_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
             self.beta_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
-        self.gamma = torch.ones((1, embed_size)) # scale factor
-        self.beta = torch.zeros((1, embed_size)) # bias factor
+        self.gamma = torch.ones((1, embed_size)).to(device) # scale factor
+        self.beta = torch.zeros((1, embed_size)).to(device) # bias factor
 
     def forward(self, hidden_states, subject):
         """
