@@ -81,7 +81,7 @@ class SubjectModel(nn.Module):
         Parameters
         ----------
         text: tensor
-            (batch_size, max_len) a batch of indexed texts
+            (batch_size, max_len) a batch of tokenized texts
             
         Returns
         -------
@@ -165,7 +165,21 @@ class ObjectModel(nn.Module):
         )
 
     def forward(self, hidden_states, subject_start_pos, subject_end_pos):
+        """
+        Extract objects with given subject positions
+        
+        Parameters
+        ----------
+        hidden_states: tensor
+            (batch_size, sent_len, embed_size) hidden states generated from bert
+        subject: tensor
+            (batch_size, 2*embed_size) concatenation of the start and end of a sampled subject
 
+        Returns
+        -------
+        preds: tensor
+            (batch_size, sent_len, predicate_num, 2) conditional-normalized hidden states
+        """   
         subject_start = seq_gather([hidden_states, subject_start_pos]) # embedding of sub_start (bsz, emb_size)
 
         subject_end = seq_gather([hidden_states, subject_end_pos]) # embedding of sub_end
