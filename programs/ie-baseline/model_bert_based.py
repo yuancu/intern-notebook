@@ -109,7 +109,7 @@ class SubjectModel(nn.Module):
 class CondLayerNorm(nn.Module):
     def __init__(self, sent_len, embed_size, encoder_hidden=None):
         super().__init__()
-        self.layer_norm = nn.LayerNorm(normalized_shape=embed_size, elementwise_affine=False)
+        self.layer_norm = nn.LayerNorm(normalized_shape=embed_size, elementwise_affine=True)
         if encoder_hidden:
             self.gamma_encoder = nn.Sequential(
                 nn.Linear(in_features=embed_size*2, out_features= encoder_hidden),
@@ -124,8 +124,6 @@ class CondLayerNorm(nn.Module):
         else:
             self.gamma_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
             self.beta_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
-        self.gamma = torch.ones((1, embed_size)) # scale factor
-        self.beta = torch.zeros((1, embed_size)) # bias factor
 
     def forward(self, hidden_states, subject):
         """
@@ -144,8 +142,8 @@ class CondLayerNorm(nn.Module):
             (batch_size, sent_len, embed_size) conditional-normalized hidden states
         """       
         std, mean = torch.std_mean(hidden_states, dim=-1, unbiased=False, keepdim=True)
-        gamma = self.gamma_encoder(subject) + self.gamma # encoder output: (bsz, word_embed)
-        beta = self.beta_encoder(subject) + self.beta
+        gamma = self.gamma_encoder(subject) # encoder output: (bsz, word_embed)
+        beta = self.beta_encoder(subject)
         gamma = gamma.view(-1, 1, gamma.shape[-1]) # (bsz, 1, word_embed_size)
         beta = beta.view(-1, 1, beta.shape[-1]) # (bsz, 1, word_embed_size)
         normalized = (hidden_states - mean) / std * gamma + beta # hidden states: (bsz, sent_len, word_embed_size)
