@@ -38,7 +38,7 @@ class DevDataGenerator:
             texts.append(text)
             tokens.append(token)
             att_masks.append(att_mask)
-            print(i, d['spo_list'])
+            # print(i, d['spo_list'])
             spoes.append(d['spo_list'])
         return texts, tokens, spoes, att_masks
 
@@ -59,10 +59,10 @@ class MyDevDataset(Data.Dataset):
 
 def dev_collate_fn(data):
     texts = [item[0] for item in data]
-    tokens = [item[1] for item in data]
-    tokens = torch.cat(tokens, dim=0)
-    spoes = [item[2] for item in data]
-    att_masks = [item[3] for item in data]
+    tokens = [item[1] for item in data] # bsz *[(1, sent_len)]
+    tokens = torch.cat(tokens, dim=0) # (bsz, sent_len)
+    spoes = [item[2] for item in data] # bsz * [list of spoes]
+    att_masks = [item[3] for item in data] # bsz * [(1, sent_len)]
     return texts, tokens, spoes, att_masks
 
 class BertDataGenerator:
@@ -81,8 +81,8 @@ class BertDataGenerator:
         idxs = list(range(len(self.data)))
         np.random.shuffle(idxs)
         if config.debug_mode:
-            print("Training with only one sample")
-            idxs = idxs[:1]
+            print("Training with only 2 sample")
+            idxs = idxs[:2]
         T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
         attention_masks = []
         for i in tqdm(idxs, desc='Preparing Data'):
