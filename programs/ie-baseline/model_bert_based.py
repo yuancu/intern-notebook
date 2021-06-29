@@ -124,8 +124,8 @@ class CondLayerNorm(nn.Module):
         else:
             self.gamma_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
             self.beta_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
-        self.gamma = torch.ones((1, embed_size)).to(device) # scale factor
-        self.beta = torch.zeros((1, embed_size)).to(device) # bias factor
+        self.gamma = torch.ones((1, embed_size)) # scale factor
+        self.beta = torch.zeros((1, embed_size)) # bias factor
 
     def forward(self, hidden_states, subject):
         """
@@ -157,7 +157,7 @@ class ObjectModel(nn.Module):
         super(ObjectModel, self).__init__()
         self.num_classes = num_classes
 
-        self.cond_layer_norm = CondLayerNorm(MAX_SENTENCE_LEN, WORD_EMB_SIZE)
+        self.cond_layer_norm = CondLayerNorm(MAX_SENTENCE_LEN, WORD_EMB_SIZE).to(device)
 
         self.pred_object = nn.Sequential(
             nn.Linear(in_features=word_emb_size, out_features=num_classes*2),
