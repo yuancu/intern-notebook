@@ -12,6 +12,7 @@ debug_mode = False
 num_classes = 0
 learning_rate = 0.001
 load_processed_data = False
+save_processed_data = False
 processed_train_data_dir = os.path.join("generated", "train")
 processed_train_data_path = os.path.join(processed_train_data_dir, "processed.pkl")
 

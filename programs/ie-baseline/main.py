@@ -63,8 +63,10 @@ if __name__ == '__main__':
     dg = BertDataGenerator(train_data, bert_tokenizer)
     if config.load_processed_data:
         T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res(load=True)
-    else:
+    elif config.save_processed_data:
         T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res(save=True)
+    else:
+        T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res()
     # print("len",len(T))
     train_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2, attention_masks)
     train_loader = Data.DataLoader(
