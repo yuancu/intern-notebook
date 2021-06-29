@@ -12,7 +12,7 @@ import time
 from transformers import BertTokenizer
 from data_gen import BertDataGenerator, DevDataGenerator, MyDataset, MyDevDataset, collate_fn, dev_collate_fn
 from model_bert_based import SubjectModel, ObjectModel
-from utils import extract_items, para_eval
+from utils import para_eval
 import config
 from config import create_parser
 
@@ -48,31 +48,11 @@ dev_data = json.load(open(dev_path))
 id2predicate, predicate2id = json.load(open(generated_schema_path))
 id2predicate = {int(i): j for i, j in id2predicate.items()}
 id2predicate[0] = "未分类"
+predicate2id["未分类"] = 0
 id2char, char2id = json.load(open(generated_char_path))
 
 NUM_CLASSES = len(predicate2id)
 config.num_classes = NUM_CLASSES
-
-
-def evaluate(tokenizer, subject_model, object_model, batch_eval=False):
-    A, B, C = 1e-10, 1e-10, 1e-10
-    cnt = 0
-    for d in tqdm(iter(dev_data), desc="Evaluate"):
-        if batch_eval and cnt == 100: # use only 100 samples to eval loss in batch
-            break
-        if config.debug_mode:
-            if cnt > 1:
-                break
-        R = set(extract_items(d['text'], tokenizer, subject_model, object_model, id2predicate))
-        T = set([tuple(i) for i in d['spo_list']])
-        A += len(R & T)
-        B += len(R)
-        C += len(T)
-        # if cnt % 1000 == 0:
-        #     print('iter: %d f1: %.4f, precision: %.4f, recall: %.4f\n' % (cnt, 2 * A / (B + C), A / B, A / C))
-        cnt += 1
-    return 2 * A / (B + C), A / B, A / C
-
 
 if __name__ == '__main__':
     bert_tokenizer = BERT_TOKENIZER
@@ -109,15 +89,11 @@ if __name__ == '__main__':
 
     subject_model = subject_model.to(device)
     object_model = object_model.to(device)
-
-    # para_eval(subject_model, object_model, dev_loader, id2predicate)
     
     params = list(subject_model.parameters())
     params += list(object_model.parameters())
     optimizer = torch.optim.Adam(params, lr=0.001)
 
-    # loss = torch.nn.CrossEntropyLoss().to(device)
-    # b_loss = torch.nn.BCEWithLogitsLoss().to(device)
     loss_fn = torch.nn.BCELoss(reduction="none").to(device)
 
     best_f1 = 0
