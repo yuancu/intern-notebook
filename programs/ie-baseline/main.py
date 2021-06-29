@@ -115,10 +115,10 @@ if __name__ == '__main__':
             object_start = loader_res["O1"].to(device) # object start in 1-0 vector (may have multiple object)
             object_end = loader_res["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
             att_mask = loader_res['masks'].to(device)
-            att_mask = att_mask
+            att_mask = att_mask.to(device)
 
             subject_preds, hidden_states = subject_model(tokens) # (bsz)
-
+            subject_preds, hidden_states = subject_preds.to(device), hidden_states.to(device)
             object_preds = object_model(hidden_states, subject_start_pos, subject_end_pos) # (bsz, sent_len, num_class, 2)
 
             # subject_labels = torch.stack((subject_start, subject_end), dim=2) # (bsz, sent_len, 2)
