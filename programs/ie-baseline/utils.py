@@ -57,9 +57,8 @@ def extract_spoes(texts, tokens, subject_model, object_model, id2predicate):
 def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=False):
     A, B, C = 1e-10, 1e-10, 1e-10
     cnt = 0
-    for step, batch in tqdm(iter(enumerate(loader)), desc='Training'):
+    for step, batch in tqdm(iter(enumerate(loader)), desc='Eval'):
         texts, tokens, spoes, att_masks = batch
-        print("hello")
         R = set(extract_spoes(texts, tokens, subject_model, object_model, id2predicate))
         T = set()
         for spo_list in spoes:
