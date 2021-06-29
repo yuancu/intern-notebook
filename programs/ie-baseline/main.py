@@ -47,9 +47,10 @@ train_data = json.load(open(train_path))
 dev_data = json.load(open(dev_path))
 id2predicate, predicate2id = json.load(open(generated_schema_path))
 id2predicate = {int(i): j for i, j in id2predicate.items()}
+id2predicate[0] = "未分类"
 id2char, char2id = json.load(open(generated_char_path))
 
-NUM_CLASSES = len(predicate2id) + 1
+NUM_CLASSES = len(predicate2id)
 config.num_classes = NUM_CLASSES
 
 
