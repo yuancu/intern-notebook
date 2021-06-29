@@ -25,6 +25,7 @@ if args.debug_mode:
 
 BERT_MODEL_NAME = config.bert_model_name
 BERT_TOKENIZER = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
+LEARNING_RATE = config.learning_rate
 # for macOS compatibility
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
@@ -93,7 +94,7 @@ if __name__ == '__main__':
     
     params = list(subject_model.parameters())
     params += list(object_model.parameters())
-    optimizer = torch.optim.Adam(params, lr=0.001)
+    optimizer = torch.optim.Adam(params, lr=LEARNING_RATE)
 
     loss_fn = torch.nn.BCELoss(reduction="none").to(device)
 
