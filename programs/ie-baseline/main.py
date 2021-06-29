@@ -2,7 +2,8 @@
 
 import json
 from random import shuffle
-from tqdm import tqdm
+from tqdm.auto import tqdm
+from tqdm.auto import trange
 import torch
 import torch.utils.data as Data
 import os
@@ -99,9 +100,10 @@ if __name__ == '__main__':
     best_f1 = 0
     best_epoch = 0
 
-    for i in range(EPOCH_NUM):
+    for i in trange(EPOCH_NUM, desc='Epoch'):
         epoch_start_time = time.time()
-        for step, loader_res in tqdm(iter(enumerate(train_loader)), desc='Training'):
+        train_tqdm = tqdm(iter(enumerate(train_loader)), desc="Train")
+        for step, loader_res in train_tqdm:
             # print(get_now_time())
             # dim of following data's 0-dim is batch size
             # max_len = 300, 句子最长为300
@@ -113,7 +115,6 @@ if __name__ == '__main__':
             object_start = loader_res["O1"].to(device) # object start in 1-0 vector (may have multiple object)
             object_end = loader_res["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
             att_mask = loader_res['masks'].to(device)
-
             att_mask = att_mask
 
             subject_preds, hidden_states = subject_model(tokens) # (bsz)
@@ -125,22 +126,25 @@ if __name__ == '__main__':
             batch_size = tokens.shape[0]
 
             s1_loss = loss_fn(subject_preds[:,:,0], subject_start) # (bsz, sent_len)
-            s1_loss = torch.mean(s1_loss, dim=0) # (sent_len)
+            # s1_loss = torch.mean(s1_loss, dim=0) # (sent_len)
             s1_loss = torch.sum(s1_loss * att_mask) / torch.sum(att_mask) # ()
             s2_loss = loss_fn(subject_preds[:,:,1], subject_end)
-            s2_loss = torch.mean(s2_loss, dim=0)
+            # s2_loss = torch.mean(s2_loss, dim=0)
             s2_loss = torch.sum(s2_loss * att_mask)/torch.sum(att_mask)
 
             o1_loss = loss_fn(object_preds[:,:,:,0], object_start) # (bsz, sent_len, n_classes)
             o1_loss = torch.mean(o1_loss, dim=2) # (bsz, sent_len)
-            o1_loss = torch.mean(o1_loss, dim=0) # (sent_len)
+            # o1_loss = torch.mean(o1_loss, dim=0) # (sent_len)
             o1_loss = torch.sum(o1_loss * att_mask) / torch.sum(att_mask) # ()
             o2_loss = loss_fn(object_preds[:,:,:,1], object_end)
             o2_loss = torch.mean(o2_loss, dim=2)
-            o2_loss = torch.mean(o2_loss, dim=0)
+            # o2_loss = torch.mean(o2_loss, dim=0)
             o2_loss = torch.sum(o2_loss * att_mask) / torch.sum(att_mask)
 
             loss_sum = s1_loss + s2_loss + o1_loss + o2_loss
+
+            writer.add_scalar('batch/loss', loss_sum.item())
+            train_tqdm.set_postfix(loss=loss_sum.item())
 
             # if step % 500 == 0:
             # 	torch.save(s_m, 'models_real/s_'+str(step)+"epoch_"+str(i)+'.pkl')
@@ -151,25 +155,17 @@ if __name__ == '__main__':
             loss_sum.backward()
             optimizer.step()
 
-            if step % 200 == 0:
-                print("epoch:", i, ", batch", step, "loss:", loss_sum.data)
-                writer.add_scalar('batch/loss', loss_sum.data)
-                # f1, precision, recall = evaluate(bert_tokenizer, subject_model, object_model, batch_eval=True)
-                # writer.add_scalar('batch/f1', f1)
-                # writer.add_scalar('batch/precision', precision)
-                # writer.add_scalar('batch/recall', recall)
-
         torch.save(subject_model, 'models_real/s_'+str(i)+'.pkl')
         torch.save(object_model, 'models_real/po_'+str(i)+'.pkl')
         # f1, precision, recall = evaluate(bert_tokenizer, subject_model, object_model)
         f1, precision, recall = para_eval(subject_model, object_model, dev_loader, id2predicate)
 
-        print("epoch:", i, "loss:", loss_sum.data)
+        print("epoch:", i, "loss:", loss_sum.item())
 
         epoch_end_time = time.time()
         epoch_time_elapsed = epoch_end_time - epoch_start_time
         print("epoch {} used {} seconds (with bsz={})".format(i, epoch_time_elapsed, BATCH_SIZE))
-        writer.add_scalar('epoch/loss', loss_sum.data, i)
+        writer.add_scalar('epoch/loss', loss_sum.item(), i)
         writer.add_scalar('f1', f1, i)
         writer.add_scalar('precision', precision, i)
         writer.add_scalar('recall', recall, i)
