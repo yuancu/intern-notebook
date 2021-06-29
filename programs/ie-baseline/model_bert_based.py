@@ -59,7 +59,7 @@ def seq_gather(x):
         res.append(torch.unsqueeze(vec, 0))
 
     res = torch.cat(res)
-    return res
+    return res.to(device)
 
 
 class SubjectModel(nn.Module):
