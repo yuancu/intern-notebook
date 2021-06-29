@@ -113,17 +113,19 @@ class CondLayerNorm(nn.Module):
         if encoder_hidden:
             self.gamma_encoder = nn.Sequential(
                 nn.Linear(in_features=embed_size*2, out_features= encoder_hidden),
+                nn.ReLU(),
                 nn.Linear(in_features=encoder_hidden, out_features=embed_size)
             )
             self.beta_encoder = nn.Sequential(
                 nn.Linear(in_features=embed_size*2, out_features= encoder_hidden),
+                nn.ReLU(),
                 nn.Linear(in_features=encoder_hidden, out_features=embed_size)
             )
         else:
             self.gamma_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
             self.beta_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
-        self.gamma = torch.ones(embed_size) # scale factor
-        self.beta = torch.zeros(embed_size) # bias factor
+        self.gamma = torch.ones((1, embed_size)) # scale factor
+        self.beta = torch.zeros((1, embed_size)) # bias factor
 
     def forward(self, hidden_states, subject):
         """
@@ -142,9 +144,11 @@ class CondLayerNorm(nn.Module):
             (batch_size, sent_len, embed_size) conditional-normalized hidden states
         """       
         std, mean = torch.std_mean(hidden_states, dim=-1, unbiased=False, keepdim=True)
-        gamma = self.gamma_encoder(subject) + self.gamma
+        gamma = self.gamma_encoder(subject) + self.gamma # encoder output: (bsz, word_embed)
         beta = self.beta_encoder(subject) + self.beta
-        normalized = (hidden_states - mean) / std * gamma + beta
+        gamma = gamma.view(-1, 1, gamma.shape[-1]) # (bsz, 1, word_embed_size)
+        beta = beta.view(-1, 1, beta.shape[-1]) # (bsz, 1, word_embed_size)
+        normalized = (hidden_states - mean) / std * gamma + beta # hidden states: (bsz, sent_len, word_embed_size)
         return normalized
 
 
@@ -168,7 +172,7 @@ class ObjectModel(nn.Module):
 
         subject = torch.cat([subject_start, subject_end], 1)  # (bsz, emd_size*2)
         
-        normalized = self.cond_layer_norm(hidden_states, subject)
+        normalized = self.cond_layer_norm(hidden_states, subject) # (bsz, sent_len, emb_size)
 
         # probs shape: (batch_size, sent_len, 2*len(predicates)) 
         # for every predicates, predicate probable start(s) and end(s) of objects
