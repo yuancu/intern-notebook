@@ -99,7 +99,7 @@ if __name__ == '__main__':
 
     best_f1 = 0
     best_epoch = 0
-
+    total_step_cnt = 0
     for i in trange(EPOCH_NUM, desc='Epoch'):
         epoch_start_time = time.time()
         train_tqdm = tqdm(iter(enumerate(train_loader)), desc="Train")
@@ -143,7 +143,7 @@ if __name__ == '__main__':
 
             loss_sum = s1_loss + s2_loss + o1_loss + o2_loss
 
-            writer.add_scalar('batch/loss', loss_sum.item())
+            writer.add_scalar('batch/loss', loss_sum.item(), total_step_cnt)
             train_tqdm.set_postfix(loss=loss_sum.item())
             
             if step % 100 == 0:
@@ -152,6 +152,8 @@ if __name__ == '__main__':
             # if step % 500 == 0:
             # 	torch.save(s_m, 'models_real/s_'+str(step)+"epoch_"+str(i)+'.pkl')
             # 	torch.save(po_m, 'models_real/po_'+str(step)+"epoch_"+str(i)+'.pkl')
+
+            total_step_cnt += 1
 
             optimizer.zero_grad()
 
