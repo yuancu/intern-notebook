@@ -1,11 +1,9 @@
-from torch.nn.modules.linear import Linear
-from data_gen import MAX_SENTENCE_LEN
 import torch
 from torch import nn
-import numpy as np
-#import matplotlib.pyplot as plt
-from transformers import BertTokenizer, PreTrainedModel, BertModel
+from transformers import BertModel
+
 import config
+from data_gen import MAX_SENTENCE_LEN
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 MAX_SENTENCE_LEN = config.max_sentence_len
