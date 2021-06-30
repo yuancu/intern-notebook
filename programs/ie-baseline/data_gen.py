@@ -27,8 +27,9 @@ class DevDataGenerator:
         idxs = list(range(len(self.data)))
         np.random.shuffle(idxs)
         if config.debug_mode:
-            print("Training with only one sample")
-            idxs = idxs[:40]
+            n_sample = 10
+            print("Validating with {} samples".format(n_sample))
+            idxs = idxs[:n_sample]
         texts, tokens, spoes, att_masks = [], [], [], []
         for i in tqdm(idxs, desc='Preparing Dev Data'):
             d = self.data[i]
@@ -90,8 +91,9 @@ class BertDataGenerator:
         idxs = list(range(len(self.data)))
         np.random.shuffle(idxs)
         if config.debug_mode:
-            print("Training with only 2 sample")
-            idxs = idxs[:500]
+            n_sample = 50
+            print("Training with only %i samples" % n_sample)
+            idxs = idxs[:n_sample]
         T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
         attention_masks = []
         for i in tqdm(idxs, desc='Preparing Train Data'):
