@@ -1,16 +1,17 @@
 #! -*- coding:utf-8 -*-
 
+import os
+import time
+from datetime import datetime
 import json
+
 from tqdm.auto import tqdm
 from tqdm.auto import trange
 import torch
 import torch.utils.data as Data
-import os
-
 import torch.nn as nn
-import time
-from datetime import datetime
 from transformers import BertTokenizer
+
 from data_gen import BertDataGenerator, DevDataGenerator, MyDataset, MyDevDataset, collate_fn, dev_collate_fn
 from model_bert_based import SubjectModel, ObjectModel
 from utils import para_eval
