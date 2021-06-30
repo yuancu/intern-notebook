@@ -14,6 +14,7 @@ file_dir = os.path.dirname(os.path.realpath(__file__))
 generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
 id2predicate, predicate2id = json.load(open(generated_schema_path))
 MAX_SENTENCE_LEN = config.max_sentence_len
+NUM_CLASSES = config.num_classes
 
 class DevDataGenerator:
     def __init__(self, data, tokenizer):
@@ -68,6 +69,17 @@ def dev_collate_fn(data):
     att_masks = [item[3] for item in data] # bsz * [(1, sent_len)]
     return texts, tokens, spoes, att_masks
 
+def search(pattern, sequence):
+    """
+    从sequence中寻找子串pattern
+    如果找到，返回第一个下标；否则返回-1。
+    """
+    n = len(pattern)
+    for i in range(len(sequence) - len(pattern)):
+        if sequence[i:i + n] == pattern:
+            return i
+    return -1
+
 class BertDataGenerator:
     def __init__(self, data, tokenizer, batch_size=64):
         self.data = data
@@ -89,7 +101,7 @@ class BertDataGenerator:
             except IOError:
                 print("processed data doesn't exist, generating...")
         idxs = list(range(len(self.data)))
-        np.random.shuffle(idxs)
+        # np.random.shuffle(idxs)
         if config.debug_mode:
             n_sample = 50
             print("Training with only %i samples" % n_sample)
@@ -99,28 +111,29 @@ class BertDataGenerator:
         for i in tqdm(idxs, desc='Preparing Train Data'):
             d = self.data[i]
             text = d['text']
+            encoded = self.tokenizer.encode_plus(text, max_length=MAX_SENTENCE_LEN, truncation=True, 
+                    pad_to_max_length=True)
+            text_token = encoded['input_ids']
+            attention_mask = encoded['attention_mask']
             items = defaultdict(list)
             for s, p, o in d['spo_list']:
-                subjectid = text.find(s)
-                objectid = text.find(o)
-                if subjectid != -1 and objectid != -1:
-                    key = (subjectid, subjectid+len(s)) # key is the span(start, end) of the subject
+                subject_token = self.tokenizer.encode(s, add_special_tokens=False)
+                object_token = self.tokenizer.encode(o, add_special_tokens=False)
+                subject_head = search(subject_token, text_token)
+                object_head = search(object_token, text_token)
+                if subject_head != -1 and object_head != -1:
+                    key = (subject_head, subject_head+len(subject_token)) # key is the span(start, end) of the subject
                     # items is {(S_start, S_end): list of (O_start_pos, O_end_pos, predicate_id)}
                     items[key].append(
-                        (objectid, objectid+len(o), predicate2id[p]))
+                        (object_head, object_head+len(object_token), predicate2id[p]))
             if items:
                 # T is list of text tokens(ids)
-                output = self.tokenizer.encode_plus(text, max_length=MAX_SENTENCE_LEN, truncation=True, 
-                    pad_to_max_length=True)
-                input_ids = output['input_ids']
-                attention_mask = output['attention_mask']
-                T.append(input_ids)  # 1是unk，0是padding
+                T.append(text_token)  # 1是unk，0是padding
                 attention_masks.append(attention_mask)
-
                 # s1: one-hot vector where start of subject is 1
                 # s2: one-hot vector where end of subject is 1
                 s1, s2 = [0] * MAX_SENTENCE_LEN, [0] * MAX_SENTENCE_LEN
-                for j in items: # mark all subject starts and ends in s1, s2
+                for j in items: # mark all subject starts and ends in s1, s2 (equals to items.keys())
                     if(j[1] < MAX_SENTENCE_LEN):
                         s1[j[0]] = 1
                         s2[j[1]-1] = 1
@@ -129,7 +142,7 @@ class BertDataGenerator:
                 k1, k2 = choice(list(items.keys()))
                 # o1: zero vector, the start of each O is marked with its predicate ID
                 # o2: zero vector, the end of each O is marked with its predicate ID
-                o1, o2 = np.zeros((MAX_SENTENCE_LEN, len(predicate2id)+1)), np.zeros((MAX_SENTENCE_LEN, len(predicate2id)+1))  # 0是unk类（共49+1个类）
+                o1, o2 = np.zeros((MAX_SENTENCE_LEN, len(id2predicate)+1)), np.zeros((MAX_SENTENCE_LEN, len(id2predicate)+1))  # 0是unk类（共49+1个类）
                 for j in items[(k1, k2)]:
                     o1[j[0], j[2]] = 1
                     o2[j[1]-1, j[2]] = 1
@@ -282,3 +295,7 @@ class DataGenerator:
 
 # /The original version of data generator
 ###########################################################
+
+
+if __name__ == "__main__":
+    print("hello world")
