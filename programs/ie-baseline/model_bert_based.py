@@ -68,7 +68,9 @@ class SubjectModel(nn.Module):
 
         # layer for subject prediction
         self.dense = nn.Sequential(
-            nn.Linear(word_emb_size, 2),
+            nn.Linear(word_emb_size, word_emb_size//2),
+            nn.ReLU(),
+            nn.Linear(word_emb_size//2, 2),
             nn.Sigmoid()
         )
 
@@ -99,7 +101,7 @@ class SubjectModel(nn.Module):
         # pooler_output = output['pooler_output']
 
         subject_preds = self.dense(hidden_states)
-        subject_preds = subject_preds**2
+        # subject_preds = subject_preds**2
 
         return subject_preds, hidden_states
 
