@@ -10,6 +10,7 @@ from tqdm.auto import trange
 import torch
 import torch.utils.data as Data
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import BertTokenizer
 
 from data_gen import BertDataGenerator, DevDataGenerator, MyDataset, MyDevDataset, collate_fn, dev_collate_fn
@@ -104,7 +105,8 @@ if __name__ == '__main__':
     params += list(object_model.parameters())
     optimizer = torch.optim.Adam(params, lr=LEARNING_RATE)
 
-    loss_fn = torch.nn.BCELoss(reduction="none").to(device)
+    # loss_fn = torch.nn.BCELoss(reduction="none").to(device)
+    loss_fn = F.binary_cross_entropy
 
     best_f1 = 0
     best_epoch = 0
@@ -112,19 +114,18 @@ if __name__ == '__main__':
     for i in trange(EPOCH_NUM, desc='Epoch'):
         epoch_start_time = time.time()
         train_tqdm = tqdm(iter(enumerate(train_loader)), desc="Train")
-        for step, loader_res in train_tqdm:
+        for step, batch in train_tqdm:
             # print(get_now_time())
             # dim of following data's 0-dim is batch size
             # max_len = 300, 句子最长为300
-            tokens = loader_res["T"].to(device) # text (in the form of index, zero-padding)
-            subject_start_pos = loader_res["K1"].to(device) # subject start index
-            subject_end_pos = loader_res["K2"].to(device) # subject end index
-            subject_start = loader_res["S1"].to(device) # subject start in 1-0 vector (may have multiple subject)
-            subject_end = loader_res["S2"].to(device) # subject end in 1-0 vector (may have multiple)
-            object_start = loader_res["O1"].to(device) # object start in 1-0 vector (may have multiple object)
-            object_end = loader_res["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
-            att_mask = loader_res['masks'].to(device)
-            att_mask = att_mask.to(device)
+            tokens = batch["T"].to(device) # text (in the form of index, zero-padding)
+            subject_start_pos = batch["K1"].to(device) # subject start index
+            subject_end_pos = batch["K2"].to(device) # subject end index
+            subject_start = batch["S1"].to(device) # subject start in 1-0 vector (may have multiple subject)
+            subject_end = batch["S2"].to(device) # subject end in 1-0 vector (may have multiple)
+            object_start = batch["O1"].to(device) # object start in 1-0 vector (may have multiple object)
+            object_end = batch["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
+            att_mask = batch['masks'].to(device)
 
             subject_preds, hidden_states = subject_model(tokens) # (bsz)
             subject_preds, hidden_states = subject_preds.to(device), hidden_states.to(device)
@@ -134,18 +135,18 @@ if __name__ == '__main__':
 
             batch_size = tokens.shape[0]
 
-            s1_loss = loss_fn(subject_preds[:,:,0], subject_start) # (bsz, sent_len)
+            s1_loss = loss_fn(subject_preds[:,:,0], subject_start, reduction='none') # (bsz, sent_len)
             # s1_loss = torch.mean(s1_loss, dim=0) # (sent_len)
             s1_loss = torch.sum(s1_loss * att_mask) / torch.sum(att_mask) # ()
-            s2_loss = loss_fn(subject_preds[:,:,1], subject_end)
+            s2_loss = loss_fn(subject_preds[:,:,1], subject_end, reduction='none')
             # s2_loss = torch.mean(s2_loss, dim=0)
             s2_loss = torch.sum(s2_loss * att_mask)/torch.sum(att_mask)
 
-            o1_loss = loss_fn(object_preds[:,:,:,0], object_start) # (bsz, sent_len, n_classes)
+            o1_loss = loss_fn(object_preds[:,:,:,0], object_start, reduction='none') # (bsz, sent_len, n_classes)
             o1_loss = torch.mean(o1_loss, dim=2) # (bsz, sent_len)
             # o1_loss = torch.mean(o1_loss, dim=0) # (sent_len)
             o1_loss = torch.sum(o1_loss * att_mask) / torch.sum(att_mask) # ()
-            o2_loss = loss_fn(object_preds[:,:,:,1], object_end)
+            o2_loss = loss_fn(object_preds[:,:,:,1], object_end, reduction='none')
             o2_loss = torch.mean(o2_loss, dim=2)
             # o2_loss = torch.mean(o2_loss, dim=0)
             o2_loss = torch.sum(o2_loss * att_mask) / torch.sum(att_mask)
