@@ -9,12 +9,14 @@ from tqdm import tqdm
 import pickle
 import config
 import pathlib
+from utils import sequence_padding, DataGenerator, id2predicate, predicate2id
 
-file_dir = os.path.dirname(os.path.realpath(__file__))
-generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
-id2predicate, predicate2id = json.load(open(generated_schema_path))
+# file_dir = os.path.dirname(os.path.realpath(__file__))
+# generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
+# id2predicate, predicate2id = json.load(open(generated_schema_path))
 MAX_SENTENCE_LEN = config.max_sentence_len
 NUM_CLASSES = config.num_classes
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class DevDataGenerator:
     def __init__(self, data, tokenizer):
@@ -59,7 +61,71 @@ class MyDevDataset(Data.Dataset):
 
     def __len__(self):
         return len(self.texts)
+    
 
+
+class NeatDataset(Data.Dataset):
+    def __init__(self, data, tokenizer):
+        super().__init__()
+        self.data = data
+        self.tokenizer = tokenizer
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        raw_data = self.data[index]
+        return self.process_data(raw_data)
+    
+    def process_data(self, d):
+        encoded = self.tokenizer(d['text'], max_length=MAX_SENTENCE_LEN, 
+            padding=True, truncation=True)
+        token_ids = encoded['input_ids']
+        attention_mask = encoded['attention_mask']
+        # 整理三元组 {s: [(o, p)]}
+        spoes = defaultdict(list)
+        for s, p, o in d['spo_list']:
+            s = self.tokenizer.encode(s, add_special_tokens=False)
+            p = predicate2id[p]
+            o = self.tokenizer.encode(o, add_special_tokens=False)
+            s_idx = search(s, token_ids)
+            o_idx = search(o, token_ids)
+            if s_idx != -1 and o_idx != -1:
+                s = (s_idx, s_idx + len(s) - 1)
+                o = (o_idx, o_idx + len(o) - 1, p)
+                spoes[s].append(o)
+        # subject标签
+        subject_labels = np.zeros((len(token_ids), 2))
+        object_labels = np.zeros((len(token_ids), len(predicate2id), 2))
+        subject_ids = (-1, -1)
+        if spoes:
+            for s in spoes:
+                subject_labels[s[0], 0] = 1
+                subject_labels[s[1], 1] = 1
+            # 随机选一个subject（这里没有实现错误！这就是想要的效果！！）
+            start, end = np.array(list(spoes.keys())).T
+            start = np.random.choice(start)
+            end = np.random.choice(end[end >= start])
+            subject_ids = (start, end)
+            # 对应的object标签
+            for o in spoes.get(subject_ids, []):
+                object_labels[o[0], o[2], 0] = 1
+                object_labels[o[1], o[2], 1] = 1
+        return token_ids, attention_mask, subject_ids, subject_labels, object_labels
+
+def neat_collate_fn(data):
+    batch_token_ids = [item[0] for item in data]
+    batch_attention_masks = [item[1] for item in data]
+    batch_subject_ids = [item[2] for item in data]
+    batch_subject_labels = [item[3] for item in data]
+    batch_object_labels = [item[4] for item in data]
+
+    batch_token_ids = torch.tensor(sequence_padding(batch_token_ids), device=device)
+    batch_attention_masks = torch.tensor(sequence_padding(batch_attention_masks), device=device)
+    batch_subject_ids = torch.tensor(batch_subject_ids, device=device)
+    batch_subject_labels = torch.FloatTensor(sequence_padding(batch_subject_labels), device=device)
+    batch_object_labels = torch.FloatTensor(sequence_padding(batch_object_labels), device=device)
+    return batch_token_ids, batch_attention_masks, batch_subject_ids, batch_subject_labels, batch_object_labels
 
 def dev_collate_fn(data):
     texts = [item[0] for item in data]
@@ -103,7 +169,7 @@ class BertDataGenerator:
         idxs = list(range(len(self.data)))
         # np.random.shuffle(idxs)
         if config.debug_mode:
-            n_sample = 50
+            n_sample = 4
             print("Training with only %i samples" % n_sample)
             idxs = idxs[:n_sample]
         T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
@@ -227,71 +293,71 @@ def seq_padding(X):
     # print("ML",ML)
     return [x + [0] * (ML - len(x)) for x in X]
 
-class DataGenerator:
-    def __init__(self, data, batch_size=64):
-        self.data = data
-        self.batch_size = batch_size
-        self.steps = len(self.data) // self.batch_size
-        if len(self.data) % self.batch_size != 0:
-            self.steps += 1
+# class DataGenerator:
+#     def __init__(self, data, batch_size=64):
+#         self.data = data
+#         self.batch_size = batch_size
+#         self.steps = len(self.data) // self.batch_size
+#         if len(self.data) % self.batch_size != 0:
+#             self.steps += 1
 
-    def __len__(self):
-        return self.steps
+#     def __len__(self):
+#         return self.steps
 
-    def pro_res(self):
-        idxs = list(range(len(self.data)))
-        # print(idxs)
-        np.random.shuffle(idxs)
-        T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
-        for i in idxs:
-            d = self.data[i]
-            text = d['text']
-            items = defaultdict(list)
-            for s, p, o in d['spo_list']:
-                subjectid = text.find(s)
-                objectid = text.find(o)
-                if subjectid != -1 and objectid != -1:
-                    key = (subjectid, subjectid+len(s)) # key is the span(start, end) of the subject
-                    # items is {(S_start, S_end): list of (O_start_pos, O_end_pos, predicate_id)}
-                    items[key].append(
-                        (objectid, objectid+len(o), predicate2id[p]))
-            if items:
-                # T is list of text tokens(ids)
-                T.append([char2id.get(c, 1) for c in text])  # 1是unk，0是padding
+#     def pro_res(self):
+#         idxs = list(range(len(self.data)))
+#         # print(idxs)
+#         np.random.shuffle(idxs)
+#         T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
+#         for i in idxs:
+#             d = self.data[i]
+#             text = d['text']
+#             items = defaultdict(list)
+#             for s, p, o in d['spo_list']:
+#                 subjectid = text.find(s)
+#                 objectid = text.find(o)
+#                 if subjectid != -1 and objectid != -1:
+#                     key = (subjectid, subjectid+len(s)) # key is the span(start, end) of the subject
+#                     # items is {(S_start, S_end): list of (O_start_pos, O_end_pos, predicate_id)}
+#                     items[key].append(
+#                         (objectid, objectid+len(o), predicate2id[p]))
+#             if items:
+#                 # T is list of text tokens(ids)
+#                 T.append([char2id.get(c, 1) for c in text])  # 1是unk，0是padding
 
-                # s1: one-hot vector where start of subject is 1
-                # s2: one-hot vector where end of subject is 1
-                s1, s2 = [0] * len(text), [0] * len(text)
-                for j in items: # mark all subject starts and ends in s1, s2
-                    s1[j[0]] = 1
-                    s2[j[1]-1] = 1
-                # TODO: Negative sampling
-                # k1, k2: randomly sampled (S_start, S_end) pair
-                k1, k2 = choice(list(items.keys()))
-                # o1: zero vector, the start of each O is marked with its predicate ID
-                # o2: zero vector, the end of each O is marked with its predicate ID
-                o1, o2 = torch.zeros(len(text), len(predicate2id)), torch.zeros(len(text), len(predicate2id))  # 0是unk类（共49+1个类）
-                for j in items[(k1, k2)]:
-                    o1[j[0], j[2]-1] = 1
-                    o2[j[1]-1, j[2]] = 1
-                S1.append(s1)
-                S2.append(s2)
-                K1.append([k1])
-                K2.append([k2-1])
-                O1.append(o1)
-                O2.append(o2)
+#                 # s1: one-hot vector where start of subject is 1
+#                 # s2: one-hot vector where end of subject is 1
+#                 s1, s2 = [0] * len(text), [0] * len(text)
+#                 for j in items: # mark all subject starts and ends in s1, s2
+#                     s1[j[0]] = 1
+#                     s2[j[1]-1] = 1
+#                 # TODO: Negative sampling
+#                 # k1, k2: randomly sampled (S_start, S_end) pair
+#                 k1, k2 = choice(list(items.keys()))
+#                 # o1: zero vector, the start of each O is marked with its predicate ID
+#                 # o2: zero vector, the end of each O is marked with its predicate ID
+#                 o1, o2 = torch.zeros(len(text), len(predicate2id)), torch.zeros(len(text), len(predicate2id))  # 0是unk类（共49+1个类）
+#                 for j in items[(k1, k2)]:
+#                     o1[j[0], j[2]-1] = 1
+#                     o2[j[1]-1, j[2]] = 1
+#                 S1.append(s1)
+#                 S2.append(s2)
+#                 K1.append([k1])
+#                 K2.append([k2-1])
+#                 O1.append(o1)
+#                 O2.append(o2)
 
-        # TODO: truncate sentences!
-        # sum(lens>150) / sum(lens > 0) = 0.0155
-        # sum(lens>128) / sum(lens > 0) = 0.0281
-        # padded as max text len
-        T = np.array(seq_padding(T))
-        S1 = np.array(seq_padding(S1))
-        S2 = np.array(seq_padding(S2))
-        O1 = np.array(seq_padding(O1))
-        O2 = np.array(seq_padding(O2))
-        K1, K2 = np.array(K1), np.array(K2)
-        return [T, S1, S2, K1, K2, O1, O2]
+#         # TODO: truncate sentences!
+#         # sum(lens>150) / sum(lens > 0) = 0.0155
+#         # sum(lens>128) / sum(lens > 0) = 0.0281
+#         # padded as max text len
+#         T = np.array(seq_padding(T))
+#         S1 = np.array(seq_padding(S1))
+#         S2 = np.array(seq_padding(S2))
+#         O1 = np.array(seq_padding(O1))
+#         O2 = np.array(seq_padding(O2))
+#         K1, K2 = np.array(K1), np.array(K2)
+#         return [T, S1, S2, K1, K2, O1, O2]
 
 # /The original version of data generator
 ###########################################################

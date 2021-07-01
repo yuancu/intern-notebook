@@ -1,10 +1,19 @@
+import os
 import torch
 import numpy as np
 import config
 import time
 from tqdm import tqdm
+import json
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+file_dir = os.getcwd()
+generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
+id2predicate, predicate2id = json.load(open(generated_schema_path))
+id2predicate = {int(i): j for i, j in id2predicate.items()}
+id2predicate[0] = "未分类"
+predicate2id["未分类"] = 0
 
 def get_now_time():
     a = time.time()
@@ -16,6 +25,35 @@ def seq_padding_vec(X):
     ML = max(L)
     # print("ML",ML)
     return [x + [[1, 0]] * (ML - len(x)) for x in X]
+
+
+def sequence_padding(inputs, length=None, value=0, seq_dims=1, mode='post'):
+    """
+    Numpy函数，将序列padding到同一长度
+    """
+    if length is None:
+        length = np.max([np.shape(x)[:seq_dims] for x in inputs], axis=0)
+    elif not hasattr(length, '__getitem__'):
+        length = [length]
+
+    slices = [np.s_[:length[i]] for i in range(seq_dims)]
+    slices = tuple(slices) if len(slices) > 1 else slices[0]
+    pad_width = [(0, 0) for _ in np.shape(inputs[0])]
+
+    outputs = []
+    for x in inputs:
+        x = x[slices]
+        for i in range(seq_dims):
+            if mode == 'post':
+                pad_width[i] = (0, length[i] - np.shape(x)[i])
+            elif mode == 'pre':
+                pad_width[i] = (length[i] - np.shape(x)[i], 0)
+            else:
+                raise ValueError('"mode" argument must be "post" or "pre".')
+        x = np.pad(x, pad_width, 'constant', constant_values=value)
+        outputs.append(x)
+
+    return np.array(outputs)
 
 
 def extract_spoes(texts, tokens, subject_model, object_model, id2predicate):
