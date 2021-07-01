@@ -4,16 +4,9 @@ import numpy as np
 import config
 import time
 from tqdm import tqdm
-import json
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-file_dir = os.getcwd()
-generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
-id2predicate, predicate2id = json.load(open(generated_schema_path))
-id2predicate = {int(i): j for i, j in id2predicate.items()}
-id2predicate[0] = "未分类"
-predicate2id["未分类"] = 0
 
 def get_now_time():
     a = time.time()

@@ -42,21 +42,24 @@ def seq_and_vec(x):
 
 def seq_gather(x):
     """seq是[None, seq_len, s_size]的格式，
-    idxs是[None, 1]的格式，在seq的第i个序列中选出第idxs[i]个向量，
-    最终输出[None, s_size]的向量。
+    idxs是[None, 2]的格式，在seq的第i个序列中选出第idxs[i]个向量，
+    最终输出[None, s_size*2]的向量。
     """
     seq, idxs = x
-    batch_idxs = torch.arange(0, seq.size(0)).to(device)
+    batch_size = seq.size(0)
+    query_num = idxs.size(1)
+    batch_idxs = torch.arange(0, batch_size).to(device)
 
     batch_idxs = torch.unsqueeze(batch_idxs, 1)
-    idxs = torch.cat([batch_idxs, idxs], 1)
 
     res = []
-    for i in range(idxs.size(0)):
-        vec = seq[idxs[i][0], idxs[i][1], :]
-        res.append(torch.unsqueeze(vec, 0))
+    for i in range(batch_size):
+        temp = []
+        for j in range(query_num):
+            temp.append(seq[i, idxs[i][j], :])
+        res.append(torch.cat(temp, 0))
 
-    res = torch.cat(res)
+    res = torch.stack(res, dim=0)
     return res.to(device)
 
 
@@ -74,7 +77,7 @@ class SubjectModel(nn.Module):
             nn.Sigmoid()
         )
 
-    def forward(self, text):
+    def forward(self, text, attention_mask=None):
         """
         Performs forward and backward propagation and updates weights
         
@@ -90,7 +93,7 @@ class SubjectModel(nn.Module):
         hidden_states: tensor
             (batch_size, sent_len, embed_size)
         """        
-        encoded = self.bert(text)
+        encoded = self.bert(text, attention_mask=attention_mask)
         # hidden_states: (batch_size, sequence_length, hidden_size=768)
         #       Sequence of hidden-states at the output of the last layer of the model.
         hidden_states = encoded['last_hidden_state']
@@ -162,7 +165,7 @@ class ObjectModel(nn.Module):
             nn.Sigmoid()
         )
 
-    def forward(self, hidden_states, subject_start_pos, subject_end_pos):
+    def forward(self, hidden_states, subject_pos):
         """
         Extract objects with given subject positions
         
@@ -177,13 +180,10 @@ class ObjectModel(nn.Module):
         -------
         preds: tensor
             (batch_size, sent_len, predicate_num, 2) conditional-normalized hidden states
-        """   
-        subject_start = seq_gather([hidden_states, subject_start_pos]) # embedding of sub_start (bsz, emb_size)
-
-        subject_end = seq_gather([hidden_states, subject_end_pos]) # embedding of sub_end
-
-        subject = torch.cat([subject_start, subject_end], 1).to(device)  # (bsz, emd_size*2)
+        """ 
         
+        subject = seq_gather([hidden_states, subject_pos]).to(device) # embedding of sub_start (bsz, emb_size*2)
+      
         normalized = self.cond_layer_norm(hidden_states, subject) # (bsz, sent_len, emb_size)
 
         # probs shape: (batch_size, sent_len, 2*len(predicates)) 

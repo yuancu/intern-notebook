@@ -9,7 +9,8 @@ from tqdm import tqdm
 import pickle
 import config
 import pathlib
-from utils import sequence_padding, DataGenerator, id2predicate, predicate2id
+from utils import sequence_padding
+from config import id2predicate, predicate2id
 
 # file_dir = os.path.dirname(os.path.realpath(__file__))
 # generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
@@ -29,10 +30,6 @@ class DevDataGenerator:
     def pro_res(self):
         idxs = list(range(len(self.data)))
         np.random.shuffle(idxs)
-        if config.debug_mode:
-            n_sample = 10
-            print("Validating with {} samples".format(n_sample))
-            idxs = idxs[:n_sample]
         texts, tokens, spoes, att_masks = [], [], [], []
         for i in tqdm(idxs, desc='Preparing Dev Data'):
             d = self.data[i]
@@ -97,7 +94,8 @@ class NeatDataset(Data.Dataset):
         # subject标签
         subject_labels = np.zeros((len(token_ids), 2))
         object_labels = np.zeros((len(token_ids), len(predicate2id), 2))
-        subject_ids = (-1, -1)
+        # assign subject as (0, 0) if there's no subject in this sentence. i.e. truncated
+        subject_ids = (0, 0)
         if spoes:
             for s in spoes:
                 subject_labels[s[0], 0] = 1

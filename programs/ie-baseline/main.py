@@ -4,6 +4,7 @@ import os
 import time
 from datetime import datetime
 import json
+import platform
 
 from tqdm.auto import tqdm
 from tqdm.auto import trange
@@ -13,12 +14,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BertTokenizer
 
-from data_gen import BertDataGenerator, DevDataGenerator, MyDataset, MyDevDataset, collate_fn, dev_collate_fn
+from data_gen import DevDataGenerator, MyDevDataset, NeatDataset, dev_collate_fn, neat_collate_fn
 from model_bert_based import SubjectModel, ObjectModel
 from utils import para_eval
 import config
-from config import create_parser
+from config import create_parser, id2predicate
 
+# process and save command line parameters
 parser = create_parser()
 args = parser.parse_args()
 config.batch_size = args.batch_size
@@ -28,55 +30,42 @@ if args.debug_mode:
 BERT_MODEL_NAME = config.bert_model_name
 BERT_TOKENIZER = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
 LEARNING_RATE = config.learning_rate
+WORD_EMB_SIZE = config.word_emb_size # default bert embedding size
+EPOCH_NUM = config.epoch_num
+BATCH_SIZE = config.batch_size
+NUM_CLASSES = config.num_classes
+TRAIN_PATH = config.train_path
+DEV_PATH = config.dev_path
+
 # for macOS compatibility
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+if platform.system() == 'Darwin':
+    os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 torch.backends.cudnn.benchmark = True
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-WORD_EMB_SIZE = config.word_emb_size # default bert embedding size
-EPOCH_NUM = config.epoch_num
-
-BATCH_SIZE = config.batch_size
 
 from torch.utils.tensorboard import SummaryWriter
 now = datetime.now()
 dt_string = now.strftime("%m_%d_%H_%M")
 writer = SummaryWriter(log_dir='./logs/'+dt_string)
 
-file_dir = os.path.dirname(os.path.realpath(__file__))
-train_path = os.path.join(file_dir, 'generated/train_data_me.json')
-dev_path = os.path.join(file_dir, 'generated/dev_data_me.json')
-generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
-generated_char_path = os.path.join(file_dir, 'generated/all_chars_me.json')
-train_data = json.load(open(train_path))
-dev_data = json.load(open(dev_path))
-id2predicate, predicate2id = json.load(open(generated_schema_path))
-id2predicate = {int(i): j for i, j in id2predicate.items()}
-id2predicate[0] = "未分类"
-predicate2id["未分类"] = 0
-id2char, char2id = json.load(open(generated_char_path))
-
-NUM_CLASSES = len(predicate2id)
-config.num_classes = NUM_CLASSES
 
 if __name__ == '__main__':
+    train_data = json.load(open(TRAIN_PATH))
+    dev_data = json.load(open(DEV_PATH))
+    if config.debug_mode:
+        train_data = train_data[:config.debug_n_train_sample]
+        dev_data = dev_data[:config.debug_n_dev_sample]
+        print("Trying to overfit %i samples" % config.debug_n_train_sample)
+        print("Using %i samples for validation" % config.debug_n_dev_sample)
     bert_tokenizer = BERT_TOKENIZER
-    dg = BertDataGenerator(train_data, bert_tokenizer)
-    if config.load_processed_data:
-        T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res(load=True)
-    elif config.save_processed_data:
-        T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res(save=True)
-    else:
-        T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res()
-    # print("len",len(T))
-    train_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2, attention_masks)
+    train_dataset = NeatDataset(train_data, bert_tokenizer)
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=8,
-        collate_fn=collate_fn,      # subprocesses for loading data
+        collate_fn=neat_collate_fn,      # subprocesses for loading data
     )
 
     dev_generator = DevDataGenerator(dev_data, bert_tokenizer)
@@ -100,7 +89,10 @@ if __name__ == '__main__':
 
     subject_model = subject_model.to(device)
     object_model = object_model.to(device)
-    
+    freeze_bert = True
+    if freeze_bert:
+        for p in subject_model.bert.parameters():
+            p.requires_grad = False
     params = list(subject_model.parameters())
     params += list(object_model.parameters())
     optimizer = torch.optim.Adam(params, lr=LEARNING_RATE)
@@ -113,66 +105,34 @@ if __name__ == '__main__':
     total_step_cnt = 0
     for i in trange(EPOCH_NUM, desc='Epoch'):
         epoch_start_time = time.time()
-        train_tqdm = tqdm(iter(enumerate(train_loader)), desc="Train")
+        train_tqdm = tqdm(enumerate(train_loader), desc="Train")
         for step, batch in train_tqdm:
-            # print(get_now_time())
-            # dim of following data's 0-dim is batch size
-            # max_len = 300, 句子最长为300
-            tokens = batch["T"].to(device) # text (in the form of index, zero-padding)
-            subject_start_pos = batch["K1"].to(device) # subject start index
-            subject_end_pos = batch["K2"].to(device) # subject end index
-            subject_start = batch["S1"].to(device) # subject start in 1-0 vector (may have multiple subject)
-            subject_end = batch["S2"].to(device) # subject end in 1-0 vector (may have multiple)
-            object_start = batch["O1"].to(device) # object start in 1-0 vector (may have multiple object)
-            object_end = batch["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
-            att_mask = batch['masks'].to(device)
+            token_ids, attention_masks, subject_ids, subject_labels, object_labels = batch
+        
+            subject_preds, hidden_states = subject_model(token_ids, attention_mask=attention_masks) # (bsz)
+            object_preds = object_model(hidden_states, subject_ids) # (bsz, sent_len, num_class, 2)
 
-            subject_preds, hidden_states = subject_model(tokens) # (bsz)
-            subject_preds, hidden_states = subject_preds.to(device), hidden_states.to(device)
-            object_preds = object_model(hidden_states, subject_start_pos, subject_end_pos) # (bsz, sent_len, num_class, 2)
-
-            # subject_labels = torch.stack((subject_start, subject_end), dim=2) # (bsz, sent_len, 2)
-
-            batch_size = tokens.shape[0]
-
-            s1_loss = loss_fn(subject_preds[:,:,0], subject_start, reduction='none') # (bsz, sent_len)
-            # s1_loss = torch.mean(s1_loss, dim=0) # (sent_len)
-            s1_loss = torch.sum(s1_loss * att_mask) / torch.sum(att_mask) # ()
-            s2_loss = loss_fn(subject_preds[:,:,1], subject_end, reduction='none')
-            # s2_loss = torch.mean(s2_loss, dim=0)
-            s2_loss = torch.sum(s2_loss * att_mask)/torch.sum(att_mask)
-
-            o1_loss = loss_fn(object_preds[:,:,:,0], object_start, reduction='none') # (bsz, sent_len, n_classes)
-            o1_loss = torch.mean(o1_loss, dim=2) # (bsz, sent_len)
-            # o1_loss = torch.mean(o1_loss, dim=0) # (sent_len)
-            o1_loss = torch.sum(o1_loss * att_mask) / torch.sum(att_mask) # ()
-            o2_loss = loss_fn(object_preds[:,:,:,1], object_end, reduction='none')
-            o2_loss = torch.mean(o2_loss, dim=2)
-            # o2_loss = torch.mean(o2_loss, dim=0)
-            o2_loss = torch.sum(o2_loss * att_mask) / torch.sum(att_mask)
-
-            loss_sum = s1_loss + s2_loss + o1_loss + o2_loss
-
+            # calc loss
+            attention_masks = attention_masks.unsqueeze(dim=2)
+            subject_loss = loss_fn(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
+            subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks) # ()
+            object_loss = loss_fn(object_preds, object_labels, reduction='none') # (bsz, sent_len, n_classes, 2)
+            object_loss = torch.mean(object_loss, dim=2) # (bsz, sent_len, 2)
+            object_loss = torch.sum(object_loss * attention_masks) / torch.sum(attention_masks) # ()
+            loss_sum = subject_loss + object_loss
+            # loggings
             writer.add_scalar('batch/loss', loss_sum.item(), total_step_cnt)
             train_tqdm.set_postfix(loss=loss_sum.item())
-            
             if step % 100 == 0:
                 writer.flush()
-
-            # if step % 500 == 0:
-            # 	torch.save(s_m, 'models_real/s_'+str(step)+"epoch_"+str(i)+'.pkl')
-            # 	torch.save(po_m, 'models_real/po_'+str(step)+"epoch_"+str(i)+'.pkl')
-
             total_step_cnt += 1
-
+            # optimize
             optimizer.zero_grad()
-
             loss_sum.backward()
             optimizer.step()
 
         torch.save(subject_model, 'models_real/s_'+str(i)+'.pkl')
         torch.save(object_model, 'models_real/po_'+str(i)+'.pkl')
-        # f1, precision, recall = evaluate(bert_tokenizer, subject_model, object_model)
         f1, precision, recall = para_eval(subject_model, object_model, dev_loader, id2predicate)
 
         print("epoch:", i, "loss:", loss_sum.item())
