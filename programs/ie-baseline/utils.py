@@ -67,9 +67,7 @@ def extract_spoes(texts, tokens, subject_model, object_model, id2predicate):
             subjects = torch.tensor(subjects)
             # create pseudo batch: repeat k-th embedding on newly inserted dim 0
             pseudo_states = torch.stack([hidden_states[k]]*len(subjects), dim=0) # (len(subjects), sent_len, emb_size)
-            extracted_sub_start = subjects[:, 0].view(-1, 1)
-            extracted_sub_end = subjects[:, 1].view(-1, 1)
-            object_preds = object_model(pseudo_states, extracted_sub_start, extracted_sub_end)
+            object_preds = object_model(pseudo_states, subjects)
             for subject, object_pred in zip(subjects, object_preds):
                 obj_start = torch.where(object_pred[:, :, 0] > 0.6)
                 obj_end = torch.where(object_pred[:, :, 1] > 0.5)
