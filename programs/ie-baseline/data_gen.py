@@ -110,11 +110,11 @@ def neat_collate_fn(data):
     batch_subject_labels = [item[3] for item in data]
     batch_object_labels = [item[4] for item in data]
 
-    batch_token_ids = torch.tensor(sequence_padding(batch_token_ids), device=device)
-    batch_attention_masks = torch.tensor(sequence_padding(batch_attention_masks), device=device)
-    batch_subject_ids = torch.tensor(batch_subject_ids, device=device)
-    batch_subject_labels = torch.FloatTensor(sequence_padding(batch_subject_labels), device=device)
-    batch_object_labels = torch.FloatTensor(sequence_padding(batch_object_labels), device=device)
+    batch_token_ids = torch.tensor(sequence_padding(batch_token_ids)).to(device)
+    batch_attention_masks = torch.tensor(sequence_padding(batch_attention_masks)).to(device)
+    batch_subject_ids = torch.tensor(batch_subject_ids).to(device)
+    batch_subject_labels = torch.FloatTensor(sequence_padding(batch_subject_labels)).to(device)
+    batch_object_labels = torch.FloatTensor(sequence_padding(batch_object_labels)).to(device)
     return batch_token_ids, batch_attention_masks, batch_subject_ids, batch_subject_labels, batch_object_labels
 
 def dev_collate_fn(data):
