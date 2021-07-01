@@ -91,8 +91,12 @@ if __name__ == '__main__':
     object_model = object_model.to(device)
     freeze_bert = True
     if freeze_bert:
-        for p in subject_model.bert.parameters():
-            p.requires_grad = False
+        if torch.cuda.device_count() > 1:
+            for p in subject_model.module.bert.parameters():
+                p.requires_grad = False
+        else:    
+            for p in subject_model.bert.parameters():
+                p.requires_grad = False
     params = list(subject_model.parameters())
     params += list(object_model.parameters())
     optimizer = torch.optim.Adam(params, lr=LEARNING_RATE)
