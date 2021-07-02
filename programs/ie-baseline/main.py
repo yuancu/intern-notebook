@@ -12,7 +12,7 @@ import torch
 import torch.utils.data as Data
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import BertTokenizer
+from transformers import BertTokenizerFast
 
 from data_gen import DevDataGenerator, MyDevDataset, NeatDataset, dev_collate_fn, neat_collate_fn
 from model_bert_based import SubjectModel, ObjectModel
@@ -28,7 +28,7 @@ if args.debug_mode:
     config.debug_mode = True
 
 BERT_MODEL_NAME = config.bert_model_name
-BERT_TOKENIZER = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
+BERT_TOKENIZER = BertTokenizerFast.from_pretrained(BERT_MODEL_NAME)
 LEARNING_RATE = config.learning_rate
 WORD_EMB_SIZE = config.word_emb_size # default bert embedding size
 EPOCH_NUM = config.epoch_num
@@ -40,6 +40,7 @@ DEV_PATH = config.dev_path
 # for macOS compatibility
 if platform.system() == 'Darwin':
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
+os.environ['TOKENIZERS_PARALLELISM']='false'
 
 torch.backends.cudnn.benchmark = True
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -118,7 +119,7 @@ if __name__ == '__main__':
 
             # calc loss
             attention_masks = attention_masks.unsqueeze(dim=2)
-            subject_loss = loss_fn(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
+            subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
             subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks) # ()
             object_loss = loss_fn(object_preds, object_labels, reduction='none') # (bsz, sent_len, n_classes, 2)
             object_loss = torch.mean(object_loss, dim=2) # (bsz, sent_len, 2)

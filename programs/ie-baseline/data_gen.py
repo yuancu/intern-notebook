@@ -22,7 +22,7 @@ class DevDataGenerator:
     def pro_res(self):
         idxs = list(range(len(self.data)))
         np.random.shuffle(idxs)
-        texts, tokens, spoes, att_masks, offset_mappings = [], [], [], []
+        texts, tokens, spoes, att_masks, offset_mappings = [], [], [], [], []
         for i in tqdm(idxs, desc='Preparing Dev Data'):
             d = self.data[i]
             text = d['text']
@@ -126,7 +126,8 @@ def dev_collate_fn(data):
     tokens = torch.cat(tokens, dim=0) # (bsz, sent_len)
     spoes = [item[2] for item in data] # bsz * [list of spoes]
     att_masks = [item[3] for item in data] # bsz * [(1, sent_len)]
-    return texts, tokens, spoes, att_masks
+    offset_mappings = [item[4] for item in data]
+    return texts, tokens, spoes, att_masks, offset_mappings
 
 def search(pattern, sequence):
     """
