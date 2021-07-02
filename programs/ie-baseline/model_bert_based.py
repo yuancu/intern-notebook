@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from transformers import BertModel
+from transformers import BertModel, BertForTokenClassification
 
 import config
 from data_gen import MAX_SENTENCE_LEN
@@ -67,15 +67,16 @@ class SubjectModel(nn.Module):
     def __init__(self, word_emb_size):
         super(SubjectModel, self).__init__()
 
-        self.bert = BertModel.from_pretrained(BERT_MODEL_NAME)
+        # self.bert = BertModel.from_pretrained(BERT_MODEL_NAME)
 
-        # layer for subject prediction
-        self.dense = nn.Sequential(
-            nn.Linear(word_emb_size, word_emb_size//2),
-            nn.ReLU(),
-            nn.Linear(word_emb_size//2, 2),
-            nn.Sigmoid()
-        )
+        # # layer for subject prediction
+        # self.dense = nn.Sequential(
+        #     nn.Linear(word_emb_size, word_emb_size//2),
+        #     nn.ReLU(),
+        #     nn.Linear(word_emb_size//2, 2),
+        #     nn.Sigmoid()
+        # )
+        self.bert = BertForTokenClassification.from_pretrained(BERT_MODEL_NAME, num_labels=2)
 
     def forward(self, text, attention_mask=None):
         """
@@ -93,17 +94,17 @@ class SubjectModel(nn.Module):
         hidden_states: tensor
             (batch_size, sent_len, embed_size)
         """        
-        encoded = self.bert(text, attention_mask=attention_mask)
+        encoded = self.bert(text, attention_mask=attention_mask, output_hidden_states=True)
         # hidden_states: (batch_size, sequence_length, hidden_size=768)
         #       Sequence of hidden-states at the output of the last layer of the model.
-        hidden_states = encoded['last_hidden_state']
+        hidden_states = encoded['hidden_states'][-2]
         # pooler_output: (batch_size, hidden_size)
         #       Last layer hidden-state of the first token of the sequence 
         #       (classification token) further processed by a Linear layer and a Tanh 
         #       activation function
         # pooler_output = output['pooler_output']
 
-        subject_preds = self.dense(hidden_states)
+        subject_preds = encoded['logits']
         # subject_preds = subject_preds**2
 
         return subject_preds, hidden_states
