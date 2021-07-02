@@ -49,8 +49,8 @@ def sequence_padding(inputs, length=None, value=0, seq_dims=1, mode='post'):
     return np.array(outputs)
 
 
-def extract_spoes(texts, tokens, subject_model, object_model, id2predicate):
-    subject_preds, hidden_states = subject_model(tokens) #(batch_size, sent_len, 2)
+def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model, id2predicate):
+    subject_preds, hidden_states = subject_model(token_ids) #(batch_size, sent_len, 2)
     # magic numbers come from https://github.com/bojone/bert4keras/blob/master/examples/task_relation_extraction.py
     batch_size = subject_preds.shape[0]
     spoes = []
@@ -75,10 +75,18 @@ def extract_spoes(texts, tokens, subject_model, object_model, id2predicate):
                     for _end, predicate2 in zip(*obj_end):
                         if _start <= _end and predicate1 == predicate2:
                             text = texts[k]
+                            offset_mapping = offset_mappings[k]
+                            # Tokens and chars in are not one-to-one mapped, we need to do
+                            # a remapping using the offset_mapping returned from tokenizer.
+                            # offset_mapping is a list of (token_head, token_tail) pairs
+                            sub_text_head = offset_mapping[subject[0]][0]
+                            sub_text_tail = offset_mapping[subject[1]][-1]
+                            obj_text_head = offset_mapping[_start][0]
+                            obj_text_tail = offset_mapping[_end][-1]
                             spoes.append(
-                                (text[subject[0]: subject[1]+1], 
+                                (text[sub_text_head: sub_text_tail+1], 
                                 id2predicate[predicate1],
-                                text[_start: _end+1])
+                                text[obj_text_head: obj_text_tail+1])
                             )
                             break
         return spoes
@@ -87,8 +95,8 @@ def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=Fals
     A, B, C = 1e-10, 1e-10, 1e-10
     cnt = 0
     for step, batch in tqdm(iter(enumerate(loader)), desc='Eval'):
-        texts, tokens, spoes, att_masks = batch
-        R = set(extract_spoes(texts, tokens, subject_model, object_model, id2predicate))
+        texts, tokens, spoes, att_masks, offset_mappings = batch
+        R = set(extract_spoes(texts, tokens, offset_mappings, subject_model, object_model, id2predicate))
         T = set()
         for spo_list in spoes:
             T.update([tuple(spo) for spo in spo_list])

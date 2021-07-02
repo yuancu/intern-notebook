@@ -22,31 +22,34 @@ class DevDataGenerator:
     def pro_res(self):
         idxs = list(range(len(self.data)))
         np.random.shuffle(idxs)
-        texts, tokens, spoes, att_masks = [], [], [], []
+        texts, tokens, spoes, att_masks, offset_mappings = [], [], [], []
         for i in tqdm(idxs, desc='Preparing Dev Data'):
             d = self.data[i]
             text = d['text']
             output = self.tokenizer.encode_plus(text, max_length=MAX_SENTENCE_LEN, truncation=True, 
-                pad_to_max_length=True, return_tensors="pt")
+                pad_to_max_length=True, return_offsets_mapping=True, return_tensors="pt")
             token = output['input_ids']
             att_mask = output['attention_mask']
+            offset_mapping = output['offset_mapping']
             texts.append(text)
             tokens.append(token)
             att_masks.append(att_mask)
             # print(i, d['spo_list'])
             spoes.append(d['spo_list'])
-        return texts, tokens, spoes, att_masks
+            offset_mappings.append(offset_mapping)
+        return texts, tokens, spoes, att_masks, offset_mappings
 
 class MyDevDataset(Data.Dataset):
-    def __init__(self, texts, tokens, spoes, att_masks):
+    def __init__(self, texts, tokens, spoes, att_masks, offset_mappings):
         super().__init__()
         self.texts = texts
         self.tokens = tokens
         self.spoes = spoes
         self.att_masks = att_masks
+        self.offset_mappings = offset_mappings
 
     def __getitem__(self, index):
-        return self.texts[index], self.tokens[index], self.spoes[index], self.att_masks[index]
+        return self.texts[index], self.tokens[index], self.spoes[index], self.att_masks[index], self.offset_mappings[index]
 
     def __len__(self):
         return len(self.texts)
