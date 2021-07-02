@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.utils.data as Data
 from tqdm import tqdm
+from transformers import BertTokenizerFast
 import config
 from utils import sequence_padding
 from config import predicate2id
@@ -12,9 +13,9 @@ NUM_CLASSES = config.num_classes
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class DevDataGenerator:
-    def __init__(self, data, tokenizer):
+    def __init__(self, data, bert_model_name):
         self.data = data
-        self.tokenizer = tokenizer
+        self.tokenizer = BertTokenizerFast.from_pretrained(bert_model_name)
 
     def __len__(self):
         return len(self.data)
@@ -57,10 +58,10 @@ class MyDevDataset(Data.Dataset):
 
 
 class NeatDataset(Data.Dataset):
-    def __init__(self, data, tokenizer):
+    def __init__(self, data, bert_model_name):
         super().__init__()
         self.data = data
-        self.tokenizer = tokenizer
+        self.tokenizer = BertTokenizerFast.from_pretrained(bert_model_name)
 
     def __len__(self):
         return len(self.data)

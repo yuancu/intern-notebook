@@ -12,7 +12,7 @@ import torch
 import torch.utils.data as Data
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import BertTokenizerFast
+from transformers import BertTokenizer
 
 from data_gen import DevDataGenerator, MyDevDataset, NeatDataset, dev_collate_fn, neat_collate_fn
 from model_bert_based import SubjectModel, ObjectModel
@@ -28,7 +28,6 @@ if args.debug_mode:
     config.debug_mode = True
 
 BERT_MODEL_NAME = config.bert_model_name
-BERT_TOKENIZER = BertTokenizerFast.from_pretrained(BERT_MODEL_NAME)
 LEARNING_RATE = config.learning_rate
 WORD_EMB_SIZE = config.word_emb_size # default bert embedding size
 EPOCH_NUM = config.epoch_num
@@ -59,8 +58,7 @@ if __name__ == '__main__':
         dev_data = dev_data[:config.debug_n_dev_sample]
         print("Trying to overfit %i samples" % config.debug_n_train_sample)
         print("Using %i samples for validation" % config.debug_n_dev_sample)
-    bert_tokenizer = BERT_TOKENIZER
-    train_dataset = NeatDataset(train_data, bert_tokenizer)
+    train_dataset = NeatDataset(train_data, BERT_MODEL_NAME)
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
@@ -69,7 +67,7 @@ if __name__ == '__main__':
         collate_fn=neat_collate_fn,      # subprocesses for loading data
     )
 
-    dev_generator = DevDataGenerator(dev_data, bert_tokenizer)
+    dev_generator = DevDataGenerator(dev_data, BERT_MODEL_NAME)
     dev_dataset = MyDevDataset(*dev_generator.pro_res())
     dev_loader = Data.DataLoader(
         dataset=dev_dataset,
