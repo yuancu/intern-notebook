@@ -39,7 +39,7 @@ DEV_PATH = config.dev_path
 # for macOS compatibility
 if platform.system() == 'Darwin':
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
-os.environ['TOKENIZERS_PARALLELISM']='false'
+# os.environ['TOKENIZERS_PARALLELISM']='false'
 
 torch.backends.cudnn.benchmark = True
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

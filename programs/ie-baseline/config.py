@@ -8,7 +8,6 @@ word_emb_size = 768 # default bert embedding size
 # around 1.5% of the sentences would be truncated if set to 150
 max_sentence_len = 128
 batch_size = 64
-bert_model_name = "hfl/chinese-bert-wwm-ext" # bert-base-chinese
 debug_mode = False
 debug_n_train_sample = 400
 debug_n_dev_sample = 100
