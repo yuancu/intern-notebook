@@ -26,6 +26,8 @@ import config
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 if __name__ == '__main__':
+#     torch.multiprocessing.set_start_method('spawn')
+    
     BERT_MODEL_NAME = config.bert_model_name
     LEARNING_RATE = config.learning_rate
     WORD_EMB_SIZE = config.word_emb_size # default bert embedding size
@@ -46,7 +48,7 @@ if __name__ == '__main__':
     config.num_classes = NUM_CLASSES
 
     # Set debug mode to True to only train on a small batch of data
-    config.debug_mode = True
+    config.debug_mode = False
 
     if config.debug_mode:
         n_sample = 4
@@ -60,8 +62,9 @@ if __name__ == '__main__':
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
-        num_workers=1,
+        num_workers=32,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
+        multiprocessing_context='spawn'
     )
 
     print("DEFINE SUBJECT")
