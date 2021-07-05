@@ -28,9 +28,6 @@ class BertDataGenerator:
     def pro_res(self):
         idxs = list(range(len(self.data)))
         np.random.shuffle(idxs)
-        if config.debug_mode:
-            print("Training with only one sample")
-            idxs = idxs[:1]
         T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
         attention_masks = []
         for i in tqdm(idxs, desc='Preparing Data'):
