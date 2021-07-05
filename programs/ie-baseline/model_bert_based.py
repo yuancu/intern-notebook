@@ -67,16 +67,29 @@ class SubjectModel(nn.Module):
     def __init__(self, word_emb_size):
         super(SubjectModel, self).__init__()
 
-        # self.bert = BertModel.from_pretrained(BERT_MODEL_NAME)
+        # Use the freezed bert as word embedding to reduce architecture modification
+        self.bert = BertModel.from_pretrained(BERT_MODEL_NAME)
+        for p in self.bert.parameters():
+            p.requires_grad = False
+
+        self.lstm = nn.LSTM(
+            input_size = word_emb_size,
+            hidden_size = word_emb_size//2,
+            num_layers = 2,
+            batch_first = True,
+            bidirectional = True
+        )
 
         # # layer for subject prediction
-        # self.dense = nn.Sequential(
-        #     nn.Linear(word_emb_size, word_emb_size//2),
-        #     nn.ReLU(),
-        #     nn.Linear(word_emb_size//2, 2),
-        #     nn.Sigmoid()
-        # )
-        self.bert = BertForTokenClassification.from_pretrained(BERT_MODEL_NAME, num_labels=2)
+        self.dense = nn.Sequential(
+            nn.Linear(word_emb_size, word_emb_size//4),
+            nn.ReLU(),
+            nn.Linear(word_emb_size//4, 2),
+            nn.Sigmoid()
+        )
+        # self.bert = BertForTokenClassification.from_pretrained(BERT_MODEL_NAME, num_labels=2)
+
+
 
     def forward(self, text, attention_mask=None):
         """
@@ -97,14 +110,17 @@ class SubjectModel(nn.Module):
         encoded = self.bert(text, attention_mask=attention_mask, output_hidden_states=True)
         # hidden_states: (batch_size, sequence_length, hidden_size=768)
         #       Sequence of hidden-states at the output of the last layer of the model.
-        hidden_states = encoded['hidden_states'][-2]
+        hidden_states = encoded['hidden_states'][-1]
         # pooler_output: (batch_size, hidden_size)
         #       Last layer hidden-state of the first token of the sequence 
         #       (classification token) further processed by a Linear layer and a Tanh 
         #       activation function
         # pooler_output = output['pooler_output']
 
-        subject_preds = encoded['logits']
+        hidden_states, _ = self.lstm(hidden_states)
+
+        subject_preds = self.dense(hidden_states)
+
         # subject_preds = subject_preds**2
 
         return subject_preds, hidden_states
