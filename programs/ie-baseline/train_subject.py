@@ -7,6 +7,7 @@ from random import choice
 from tqdm import tqdm
 import model
 import torch
+import torch.nn as nn
 from torch.autograd import Variable
 #import data_prepare
 import os
@@ -219,7 +220,7 @@ def evaluate():
     return 2 * A / (B + C), A / B, A / C
 
 if __name__ == '__main__':
-    train_data = train_data[:4]
+#     train_data = train_data[:4]
     dg = DataGenerator(train_data)
     T, S1, S2, K1, K2, O1, O2 = dg.pro_res()
     # print("len",len(T))
@@ -235,6 +236,10 @@ if __name__ == '__main__':
 
     # print("len",len(id2char))
     s_m = model.s_model(len(char2id)+2, CHAR_SIZE, HIDDEN_SIZE).to(device)
+    
+    if torch.cuda.device_count() > 1:
+        print('Using', torch.cuda.device_count(), "GPUs!")
+        s_m = nn.DataParallel(s_m)
 
     
     params = list(s_m.parameters())
