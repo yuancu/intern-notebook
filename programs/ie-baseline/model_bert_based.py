@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from transformers import BertModel, BertForTokenClassification
+import json
 
 import config
 from data_gen import MAX_SENTENCE_LEN
@@ -8,6 +9,9 @@ from data_gen import MAX_SENTENCE_LEN
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 MAX_SENTENCE_LEN = config.max_sentence_len
 WORD_EMB_SIZE = config.word_emb_size
+
+# used for nn.Embedding layer
+# id2char, char2id = json.load(open('./all_chars_me.json'))
 
 ###################
 # BERT related code
@@ -68,9 +72,16 @@ class SubjectModel(nn.Module):
         super(SubjectModel, self).__init__()
 
         # Use the freezed bert as word embedding to reduce architecture modification
-        self.bert = BertModel.from_pretrained(BERT_MODEL_NAME)
-        for p in self.bert.parameters():
-            p.requires_grad = False
+        # self.bert = BertModel.from_pretrained(BERT_MODEL_NAME)
+        # for p in self.bert.parameters():
+        #     p.requires_grad = False
+
+        # 21129 is from https://huggingface.co/bert-base-chinese/blob/main/vocab.txt
+        self.embed = nn.Embedding(21129, WORD_EMB_SIZE)
+
+        self.dropout = nn.Sequential(
+            nn.Dropout(0.20),  # drop 20% of the neuron 
+        )
 
         self.lstm = nn.LSTM(
             input_size = word_emb_size,
@@ -107,16 +118,19 @@ class SubjectModel(nn.Module):
         hidden_states: tensor
             (batch_size, sent_len, embed_size)
         """        
-        encoded = self.bert(text, attention_mask=attention_mask, output_hidden_states=True)
+        # encoded = self.bert(text, attention_mask=attention_mask, output_hidden_states=True)
         # hidden_states: (batch_size, sequence_length, hidden_size=768)
         #       Sequence of hidden-states at the output of the last layer of the model.
-        hidden_states = encoded['hidden_states'][-1]
+       
+        # hidden_states = encoded['hidden_states'][-1]
         # pooler_output: (batch_size, hidden_size)
         #       Last layer hidden-state of the first token of the sequence 
         #       (classification token) further processed by a Linear layer and a Tanh 
         #       activation function
         # pooler_output = output['pooler_output']
 
+        embeded = self.embed(text)
+        hidden_states = self.dropout(embeded)
         hidden_states, _ = self.lstm(hidden_states)
 
         subject_preds = self.dense(hidden_states)

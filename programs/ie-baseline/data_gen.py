@@ -61,7 +61,7 @@ class NeatDataset(Data.Dataset):
     def __init__(self, data, bert_model_name):
         super().__init__()
         self.data = data
-        self.tokenizer = BertTokenizerFast.from_pretrained(bert_model_name)
+        self.tokenizer = BertTokenizerFast.from_pretrained("bert-base-chinese")
 
     def __len__(self):
         return len(self.data)
