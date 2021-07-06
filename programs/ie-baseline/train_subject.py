@@ -19,8 +19,34 @@ from config import predicate2id
 import config
 
 
+def train(subject_model, device, train_tqdm, optimizer, epoch, total_step_cnt, writer, hook):
+    for batch in train_tqdm:
+        token_ids, attention_masks, subject_ids, subject_labels, object_labels = batch
+        token_ids, attention_masks, subject_ids, subject_labels, object_labels = \
+            token_ids.to(device), attention_masks.to(device), subject_ids.to(device), \
+            subject_labels.to(device), object_labels.to(device)
+        # predict
+        subject_preds, hidden_states = subject_model(token_ids, attention_mask=attention_masks)
+        # calc loss
+        subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
+        attention_masks = attention_masks.unsqueeze(dim=2)
+        subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks) # ()
+        # s1_loss = loss_fn(subject_preds[:,:,0], subject_start)
+        # s2_loss = loss_fn(subject_preds[:,:,1], subject_end)
+        loss_sum = subject_loss
+        # loggings
+        writer.add_scalar('subject/loss', loss_sum.item(), total_step_cnt)
+        # print(loss_sum.item(), total_step_cnt)
+        total_step_cnt += 1
+        train_tqdm.set_postfix(loss=loss_sum.item())
+        #updates
+        optimizer.zero_grad()
+        loss_sum.backward()
+        optimizer.step()
+    return total_step_cnt
 
-
+def test(model, device, test_loader, hook):
+    pass
 
 # macos only: use this command to work around the libomp issue (multiple libs are loaded)
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -91,26 +117,6 @@ if __name__ == '__main__':
     print("tensorboard --logdir=logs/subject")
 
     total_step_cnt = 0 # a counter for tensorboard writer
-    for i in trange(EPOCH_NUM, desc='Epoch'):
-        train_tqdm = tqdm(enumerate(iter(train_loader)), desc="Train")
-        for step, batch in train_tqdm:
-            optimizer.zero_grad()
-            token_ids, attention_masks, subject_ids, subject_labels, object_labels = batch
-            # predict
-            subject_preds, hidden_states = subject_model(token_ids, attention_mask=attention_masks)
-            # calc loss
-            subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
-            attention_masks = attention_masks.unsqueeze(dim=2)
-            subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks) # ()
-            # s1_loss = loss_fn(subject_preds[:,:,0], subject_start)
-            # s2_loss = loss_fn(subject_preds[:,:,1], subject_end)
-            loss_sum = subject_loss
-            # loggings
-            writer.add_scalar('subject/loss', loss_sum.item(), total_step_cnt)
-            # print(loss_sum.item(), total_step_cnt)
-            total_step_cnt += 1
-            train_tqdm.set_postfix(loss=loss_sum.item())
-            #updates
-            
-            loss_sum.backward()
-            optimizer.step()
+    for e in trange(EPOCH_NUM, desc='Epoch'):
+        train_tqdm = tqdm(train_loader, desc="Train")
+        total_step_cnt = train(subject_model, device, train_tqdm, optimizer, e, total_step_cnt, writer, None)
