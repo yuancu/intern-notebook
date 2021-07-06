@@ -290,10 +290,10 @@ def test(s_m, epoch, loader):
             exists += s1.sum().item() + s2.sum().item()
             s1_correct = torch.logical_and(ps_1 > 0.6, s1 > 0.6).sum().item()
             s2_correct = torch.logical_and(ps_2 > 0.6, s2 > 0.6).sum().item()
-#             this should be for object
-#             exists += (s1 > 0).sum().item() + (s2 > 0).sum().item()
-#             s1_correct = torch.logical_and(ps_1 == s1, s1 != 0).sum().item()
-#             s2_correct = torch.logical_and(ps_2 == s2, s2 != 0).sum().item()
+            # this should be for object
+            # exists += (s1 > 0).sum().item() + (s2 > 0).sum().item()
+            # s1_correct = torch.logical_and(ps_1 == s1, s1 != 0).sum().item()
+            # s2_correct = torch.logical_and(ps_2 == s2, s2 != 0).sum().item()
             correct = s1_correct + s2_correct
     print(f"epoch {epoch} eval, loss: {test_loss}, recall: {correct}/{exists}")
 
