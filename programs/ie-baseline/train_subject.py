@@ -64,8 +64,8 @@ def train(subject_model, device, train_tqdm, optimizer, epoch, total_step_cnt, w
             )
     return total_step_cnt
 
-def test(model, device, test_loader, hook):
-    model.eval()
+def test(subject_model, device, test_loader, hook):
+    subject_model.eval()
     # ===================================================#
     # 3. Set the SMDebug hook for the validation phase. #
     # ===================================================#
