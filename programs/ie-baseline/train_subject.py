@@ -167,7 +167,7 @@ def collate_fn(data):
         'O2': torch.LongTensor(o2),
     }
 
-def extract_items(text_in):
+def extract_items(text_in, s_m, po_m):
     R = []
     _s = [char2id.get(c, 1) for c in text_in]
     _s = np.array([_s])
@@ -219,20 +219,90 @@ def evaluate():
         cnt += 1
     return 2 * A / (B + C), A / B, A / C
 
+def train(s_m, optimizer, epoch, loader):
+    s_m.train()
+    for step, batch in tqdm(iter(enumerate(loader))):
+        t_s = batch["T"].to(device)
+        k1 = batch["K1"].to(device) # sampled subject
+        k2 = batch["K2"].to(device) # (batch_size, 1)
+        s1 = batch["S1"].to(device) # all subjects in 1-0 vector
+        s2 = batch["S2"].to(device) # (batch_size, sent_len)
+        o1 = batch["O1"].to(device) # objects
+        o2 = batch["O2"].to(device) # (batch_size, sent_len)
+    
+        ps_1, ps_2, t, t_max, mask = s_m(t_s)
+
+        ps_1 = ps_1.to(device)
+        ps_2 = ps_2.to(device)
+
+        s1 = torch.unsqueeze(s1, 2)
+        s2 = torch.unsqueeze(s2, 2)
+
+        s1_loss = F.binary_cross_entropy_with_logits(ps_1, s1)
+        s1_loss = torch.sum(s1_loss.mul(mask))/torch.sum(mask)
+        s2_loss = F.binary_cross_entropy_with_logits(ps_2, s2)
+        s2_loss = torch.sum(s2_loss.mul(mask))/torch.sum(mask)
+
+        loss_sum = s1_loss + s2_loss
+
+        optimizer.zero_grad()
+        loss_sum.backward()
+        optimizer.step()
+
+        print(f"epoch: {epoch}, step: {step}, loss: {loss_sum.item()}")
+
+def test(s_m, epoch, loader):
+    s_m.eval()
+    test_loss = 0
+    correct = 0
+    exists = 0
+    with torch.no_grad():
+        for step, batch in tqdm(iter(enumerate(loader))):
+            t_s = batch["T"].to(device)
+            k1 = batch["K1"].to(device) # sampled subject
+            k2 = batch["K2"].to(device) # (batch_size, 1)
+            s1 = batch["S1"].to(device) # all subjects in 1-0 vector
+            s2 = batch["S2"].to(device) # (batch_size, sent_len)
+            o1 = batch["O1"].to(device) # objects
+            o2 = batch["O2"].to(device) # (batch_size, sent_len)
+            ps_1, ps_2, t, t_max, mask = s_m(t_s)
+
+            ps_1 = ps_1.to(device)
+            ps_2 = ps_2.to(device)
+
+            s1 = torch.unsqueeze(s1, 2)
+            s2 = torch.unsqueeze(s2, 2)
+
+            s1_loss = F.binary_cross_entropy_with_logits(ps_1, s1)
+            s1_loss = torch.sum(s1_loss.mul(mask))/torch.sum(mask)
+            s2_loss = F.binary_cross_entropy_with_logits(ps_2, s2)
+            s2_loss = torch.sum(s2_loss.mul(mask))/torch.sum(mask)
+
+            loss_sum = s1_loss + s2_loss
+
+            test_loss += loss_sum.item()
+            exists += s1.sum().item() + s2.sum().item()
+            s1_correct = (ps_1 > 0.6).eq(s1 > 0.6).sum().item()
+            s2_correct = (ps_2 > 0.6).eq(s2 > 0.6).sum().item()
+            correct = s1_correct + s2_correct
+    print(f"epoch:{epoch} eval, loss: {test_loss}, predicted: {correct}/{exists}")
+
 if __name__ == '__main__':
-#     train_data = train_data[:4]
+    # train_data = train_data[:4]
     dg = DataGenerator(train_data)
     T, S1, S2, K1, K2, O1, O2 = dg.pro_res()
     # print("len",len(T))
 
-    torch_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2)
-    loader = Data.DataLoader(
-        dataset=torch_dataset,      # torch TensorDataset format
+    train_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2)
+    train_loader = Data.DataLoader(
+        dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=8,
         collate_fn=collate_fn,      # subprocesses for loading data
     )
+
+    
 
     # print("len",len(id2char))
     s_m = model.s_model(len(char2id)+2, CHAR_SIZE, HIDDEN_SIZE).to(device)
@@ -251,36 +321,5 @@ if __name__ == '__main__':
     best_f1 = 0
     best_epoch = 0
 
-    for i in range(EPOCH_NUM):
-        for step, loader_res in tqdm(iter(enumerate(loader))):
-            # print(get_now_time())
-            t_s = loader_res["T"].to(device)
-            k1 = loader_res["K1"].to(device)
-            k2 = loader_res["K2"].to(device)
-            s1 = loader_res["S1"].to(device)
-            s2 = loader_res["S2"].to(device)
-            o1 = loader_res["O1"].to(device)
-            o2 = loader_res["O2"].to(device)
-
-            ps_1, ps_2, t, t_max, mask = s_m(t_s)
-
-            ps_1 = ps_1.to(device)
-            ps_2 = ps_2.to(device)
-
-            s1 = torch.unsqueeze(s1, 2)
-            s2 = torch.unsqueeze(s2, 2)
-
-            s1_loss = bce_loss(ps_1, s1)
-            s1_loss = torch.sum(s1_loss.mul(mask))/torch.sum(mask)
-            s2_loss = bce_loss(ps_2, s2)
-            s2_loss = torch.sum(s2_loss.mul(mask))/torch.sum(mask)
-
-            loss_sum = s1_loss + s2_loss
-
-            optimizer.zero_grad()
-
-            loss_sum.backward()
-            optimizer.step()
-
-
-            print("epoch:", i, "loss:", loss_sum.item())
+    for e in range(EPOCH_NUM):
+        train(s_m, optimizer, e, train_loader)
