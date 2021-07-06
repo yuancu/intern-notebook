@@ -219,7 +219,7 @@ def evaluate():
         cnt += 1
     return 2 * A / (B + C), A / B, A / C
 
-def train(s_m, optimizer, epoch, loader):
+def train(s_m, optimizer, epoch, loader, log_interval = 10):
     s_m.train()
     for step, batch in tqdm(iter(enumerate(loader))):
         t_s = batch["T"].to(device)
@@ -248,8 +248,14 @@ def train(s_m, optimizer, epoch, loader):
         optimizer.zero_grad()
         loss_sum.backward()
         optimizer.step()
+        
+        exists = s1.sum().item() + s2.sum().item()
+        s1_correct = torch.logical_and(ps_1 > 0.6, s1 > 0.6).sum().item()
+        s2_correct = torch.logical_and(ps_2 > 0.6, s2 > 0.6).sum().item()
+        correct = s1_correct + s2_correct
 
-        print(f"epoch: {epoch}, step: {step}, loss: {loss_sum.item()}")
+        if step % log_interval == 0:
+            print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, recall: {correct}/{exists}")
 
 def test(s_m, epoch, loader):
     s_m.eval()
@@ -284,29 +290,33 @@ def test(s_m, epoch, loader):
             exists += s1.sum().item() + s2.sum().item()
             s1_correct = torch.logical_and(ps_1 > 0.6, s1 > 0.6).sum().item()
             s2_correct = torch.logical_and(ps_2 > 0.6, s2 > 0.6).sum().item()
+#             this should be for object
+#             exists += (s1 > 0).sum().item() + (s2 > 0).sum().item()
+#             s1_correct = torch.logical_and(ps_1 == s1, s1 != 0).sum().item()
+#             s2_correct = torch.logical_and(ps_2 == s2, s2 != 0).sum().item()
             correct = s1_correct + s2_correct
-    print(f"epoch {epoch} eval, loss: {test_loss}, predicted: {correct}/{exists}")
+    print(f"epoch {epoch} eval, loss: {test_loss}, recall: {correct}/{exists}")
 
 if __name__ == '__main__':
-    # train_data = train_data[:4]
+    train_data = train_data[:10000]
     train_dg = DataGenerator(train_data)
     train_dataset = MyDataset(*train_dg.pro_res())
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
-        num_workers=8,
+        num_workers=4,
         collate_fn=collate_fn,      # subprocesses for loading data
     )
 
-    # dev_data = dev_data[:4]
+    dev_data = dev_data[:1000]
     test_dg = DataGenerator(dev_data)
     test_dataset = MyDataset(*test_dg.pro_res())
     test_dataloder = Data.DataLoader(
         dataset=test_dataset,
         batch_size=BATCH_SIZE,     
         shuffle=True,
-        num_workers=8,
+        num_workers=4,
         collate_fn=collate_fn,
     )
 
