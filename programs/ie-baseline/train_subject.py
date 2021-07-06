@@ -7,6 +7,7 @@ import torch.utils.data as Data
 import os
 
 import torch.nn as nn
+import torch.nn.functional as F
 import time
 from transformers import BertTokenizer
 from data_gen import BertDataGenerator, MyDataset, collate_fn
@@ -69,20 +70,110 @@ def evaluate(tokenizer, subject_model, object_model, batch_eval=False):
         cnt += 1
     return 2 * A / (B + C), A / B, A / C
 
+def train(s_m, optimizer, epoch, loader, log_interval = 10):
+    s_m.train()
+    for step, batch in tqdm(iter(enumerate(loader))):
+        text = batch["T"].to(device) # text (in the form of index, zero-padding)
+        subject_start_pos = batch["K1"].to(device) # subject start index
+        subject_end_pos = batch["K2"].to(device) # subject end index
+        subject_start = batch["S1"].to(device) # subject start in 1-0 vector (may have multiple subject)
+        subject_end = batch["S2"].to(device) # subject end in 1-0 vector (may have multiple)
+        object_start = batch["O1"].to(device) # object start in 1-0 vector (may have multiple object)
+        object_end = batch["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
+        att_mask = batch['masks'].to(device)
+
+        att_mask = att_mask.unsqueeze(dim=2)
+
+        predicted_subject_start, predicted_subject_end, hidden_states, t_max = s_m(text, att_mask)
+
+        predicted_subject_start = predicted_subject_start.to(device)
+        predicted_subject_end = predicted_subject_end.to(device)
+
+        subject_start = torch.unsqueeze(subject_start, 2)
+        subject_end = torch.unsqueeze(subject_end, 2)
+
+        s1_loss = bce_loss(predicted_subject_start, subject_start)
+        s1_loss = torch.sum(s1_loss.mul(att_mask))/torch.sum(att_mask)
+        s2_loss = bce_loss(predicted_subject_end, subject_end)
+        s2_loss = torch.sum(s2_loss.mul(att_mask))/torch.sum(att_mask)
+
+        loss_sum = s1_loss + s2_loss
+
+        optimizer.zero_grad()
+        loss_sum.backward()
+        optimizer.step()
+        
+        exists = subject_start.sum().item() + subject_end.sum().item()
+        s1_correct = torch.logical_and(predicted_subject_start > 0.6, subject_start > 0.6).sum().item()
+        s2_correct = torch.logical_and(predicted_subject_end > 0.6, subject_end > 0.6).sum().item()
+        correct = s1_correct + s2_correct
+
+        if step % log_interval == 0:
+            print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, recall: {correct}/{exists}")
+
+def test(s_m, epoch, loader):
+    s_m.eval()
+    test_loss = 0
+    correct = 0
+    exists = 0
+    with torch.no_grad():
+        for step, batch in tqdm(iter(enumerate(loader))):
+            text = batch["T"].to(device) # text (in the form of index, zero-padding)
+            subject_start_pos = batch["K1"].to(device) # subject start index
+            subject_end_pos = batch["K2"].to(device) # subject end index
+            subject_start = batch["S1"].to(device) # subject start in 1-0 vector (may have multiple subject)
+            subject_end = batch["S2"].to(device) # subject end in 1-0 vector (may have multiple)
+            object_start = batch["O1"].to(device) # object start in 1-0 vector (may have multiple object)
+            object_end = batch["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
+            att_mask = batch['masks'].to(device)
+
+            att_mask = att_mask.unsqueeze(dim=2)
+
+            predicted_subject_start, predicted_subject_end, hidden_states, t_max = s_m(text, att_mask)
+
+            predicted_subject_start = predicted_subject_start.to(device)
+            predicted_subject_end = predicted_subject_end.to(device)
+
+            subject_start = torch.unsqueeze(subject_start, 2)
+            subject_end = torch.unsqueeze(subject_end, 2)
+
+            s1_loss = bce_loss(predicted_subject_start, subject_start)
+            s1_loss = torch.sum(s1_loss.mul(att_mask))/torch.sum(att_mask)
+            s2_loss = bce_loss(predicted_subject_end, subject_end)
+            s2_loss = torch.sum(s2_loss.mul(att_mask))/torch.sum(att_mask)
+
+            loss_sum = s1_loss + s2_loss
+
+            test_loss += loss_sum.item()
+            exists = subject_start.sum().item() + subject_end.sum().item()
+            s1_correct = torch.logical_and(predicted_subject_start > 0.6, subject_start > 0.6).sum().item()
+            s2_correct = torch.logical_and(predicted_subject_end > 0.6, subject_end > 0.6).sum().item()
+            correct = s1_correct + s2_correct
+    print(f"epoch {epoch} eval, loss: {test_loss}, recall: {correct}/{exists}")
 
 if __name__ == '__main__':
-    train_data = train_data[:4]
     bert_tokenizer = BERT_TOKENIZER
-    dg = BertDataGenerator(train_data, bert_tokenizer)
-    T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res()
-    # print("len",len(T))
-    torch_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2, attention_masks)
-    loader = Data.DataLoader(
-        dataset=torch_dataset,      # torch TensorDataset format
+    train_data = train_data[:4]
+    
+    train_dg = BertDataGenerator(train_data, bert_tokenizer)
+    train_dataset = MyDataset(*train_dg.pro_res())
+    train_loader = Data.DataLoader(
+        dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
-        num_workers=8,
+        num_workers=4,
         collate_fn=collate_fn,      # subprocesses for loading data
+    )
+
+    dev_data = dev_data[:4]
+    test_dg = BertDataGenerator(dev_data, bert_tokenizer)
+    test_dataset = MyDataset(*test_dg.pro_res())
+    test_loder = Data.DataLoader(
+        dataset=test_dataset,
+        batch_size=BATCH_SIZE,     
+        shuffle=True,
+        num_workers=4,
+        collate_fn=collate_fn,
     )
 
     # print("len",len(id2char))
@@ -104,59 +195,6 @@ if __name__ == '__main__':
     best_epoch = 0
     total_batch_step_cnt = 0
 
-    for i in range(EPOCH_NUM):
-        epoch_start_time = time.time()
-        for step, loader_res in tqdm(iter(enumerate(loader))):
-            # print(get_now_time())
-            # dim of following data's 0-dim is batch size
-            # max_len = 300, 句子最长为300
-            text = loader_res["T"].to(device) # text (in the form of index, zero-padding)
-            subject_start_pos = loader_res["K1"].to(device) # subject start index
-            subject_end_pos = loader_res["K2"].to(device) # subject end index
-            subject_start = loader_res["S1"].to(device) # subject start in 1-0 vector (may have multiple subject)
-            subject_end = loader_res["S2"].to(device) # subject end in 1-0 vector (may have multiple)
-            object_start = loader_res["O1"].to(device) # object start in 1-0 vector (may have multiple object)
-            object_end = loader_res["O2"].to(device) # object end in 1-0 vector (may have multiple objects)
-            att_mask = loader_res['masks'].to(device)
-
-            att_mask = att_mask.unsqueeze(dim=2)
-
-            predicted_subject_start, predicted_subject_end, hidden_states, t_max = s_m(text, att_mask)
-
-            predicted_subject_start = predicted_subject_start.to(device)
-            predicted_subject_end = predicted_subject_end.to(device)
- 
-
-            subject_start = torch.unsqueeze(subject_start, 2)
-            subject_end = torch.unsqueeze(subject_end, 2)
-
-            s1_loss = bce_loss(predicted_subject_start, subject_start)
-            s1_loss = torch.sum(s1_loss.mul(att_mask))/torch.sum(att_mask)
-            s2_loss = bce_loss(predicted_subject_end, subject_end)
-            s2_loss = torch.sum(s2_loss.mul(att_mask))/torch.sum(att_mask)
-
-
-
-            loss_sum = s1_loss + s2_loss
-
-            # if step % 500 == 0:
-            # 	torch.save(s_m, 'models_real/s_'+str(step)+"epoch_"+str(i)+'.pkl')
-            # 	torch.save(po_m, 'models_real/po_'+str(step)+"epoch_"+str(i)+'.pkl')
-
-            optimizer.zero_grad()
-
-            loss_sum.backward()
-            optimizer.step()
-
-   
-            print("epoch:", i, ", batch", step, "loss:", loss_sum.item())
-            writer.add_scalar('batch/loss', loss_sum.item(), total_batch_step_cnt)
-            total_batch_step_cnt += 1
-
-        # torch.save(s_m, 'models_real/s_'+str(i)+'.pkl')
-
-        # print("epoch:", i, "loss:", loss_sum.item())
-
-        epoch_end_time = time.time()
-        epoch_time_elapsed = epoch_end_time - epoch_start_time
-        # print("epoch {} used {} seconds (with bsz={})".format(i, epoch_time_elapsed, BATCH_SIZE))
+    for e in range(EPOCH_NUM):
+        train(s_m, optimizer, e, train_loader, log_interval = 10)
+        test(s_m, e, test_loder)
