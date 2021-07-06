@@ -282,18 +282,15 @@ def test(s_m, epoch, loader):
 
             test_loss += loss_sum.item()
             exists += s1.sum().item() + s2.sum().item()
-            s1_correct = (ps_1 > 0.6).eq(s1 > 0.6).sum().item()
-            s2_correct = (ps_2 > 0.6).eq(s2 > 0.6).sum().item()
+            s1_correct = torch.logical_and(ps_1 > 0.6, s1 > 0.6).sum().item()
+            s2_correct = torch.logical_and(ps_2 > 0.6, s2 > 0.6).sum().item()
             correct = s1_correct + s2_correct
-    print(f"epoch:{epoch} eval, loss: {test_loss}, predicted: {correct}/{exists}")
+    print(f"epoch {epoch} eval, loss: {test_loss}, predicted: {correct}/{exists}")
 
 if __name__ == '__main__':
     # train_data = train_data[:4]
-    dg = DataGenerator(train_data)
-    T, S1, S2, K1, K2, O1, O2 = dg.pro_res()
-    # print("len",len(T))
-
-    train_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2)
+    train_dg = DataGenerator(train_data)
+    train_dataset = MyDataset(*train_dg.pro_res())
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
@@ -302,7 +299,16 @@ if __name__ == '__main__':
         collate_fn=collate_fn,      # subprocesses for loading data
     )
 
-    
+    # dev_data = dev_data[:4]
+    test_dg = DataGenerator(dev_data)
+    test_dataset = MyDataset(*test_dg.pro_res())
+    test_dataloder = Data.DataLoader(
+        dataset=test_dataset,
+        batch_size=BATCH_SIZE,     
+        shuffle=True,
+        num_workers=8,
+        collate_fn=collate_fn,
+    )
 
     # print("len",len(id2char))
     s_m = model.s_model(len(char2id)+2, CHAR_SIZE, HIDDEN_SIZE).to(device)
@@ -323,3 +329,4 @@ if __name__ == '__main__':
 
     for e in range(EPOCH_NUM):
         train(s_m, optimizer, e, train_loader)
+        test(s_m, e, test_dataloder)
