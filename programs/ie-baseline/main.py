@@ -22,7 +22,6 @@ if args.debug_mode:
     config.debug_mode = True
 
 BERT_MODEL_NAME = config.bert_model_name
-BERT_TOKENIZER = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
 # for macOS compatibility
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
@@ -71,11 +70,8 @@ def evaluate(tokenizer, subject_model, object_model, batch_eval=False):
 
 
 if __name__ == '__main__':
-    bert_tokenizer = BERT_TOKENIZER
-    dg = BertDataGenerator(train_data, bert_tokenizer)
-    T, S1, S2, K1, K2, O1, O2, attention_masks = dg.pro_res()
-    # print("len",len(T))
-    torch_dataset = MyDataset(T, S1, S2, K1, K2, O1, O2, attention_masks)
+    bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
+    torch_dataset = MyDataset(train_data, BERT_MODEL_NAME)
     loader = Data.DataLoader(
         dataset=torch_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size

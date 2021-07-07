@@ -31,21 +31,16 @@ def seq_and_vec(x):
 
 def seq_gather(x):
     """seq是[None, seq_len, s_size]的格式，
-    idxs是[None, 1]的格式，在seq的第i个序列中选出第idxs[i]个向量，
+    idxs是[None,]的格式，在seq的第i个序列中选出第idxs[i]个向量，
     最终输出[None, s_size]的向量。
     """
     seq, idxs = x
-    batch_idxs = torch.arange(0, seq.size(0)).to(device)
-
-    batch_idxs = torch.unsqueeze(batch_idxs, 1)
-    idxs = torch.cat([batch_idxs, idxs], 1)
-
+    batch_size = seq.shape[0]
     res = []
-    for i in range(idxs.size(0)):
-        vec = seq[idxs[i][0], idxs[i][1], :]
-        res.append(torch.unsqueeze(vec, 0))
-
-    res = torch.cat(res)
+    for i in range(batch_size):
+        vec = seq[i, idxs[i], :]
+        res.append(vec)
+    res = torch.stack(res, dim=0)
     return res
 
 
