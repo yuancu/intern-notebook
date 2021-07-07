@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 from transformers import BertTokenizer
-from data_gen import BertDataGenerator, MyDataset, collate_fn
+from data_gen import MyDataset, collate_fn
 from model_bert_based import SubjectModel, ObjectModel
 from utils import extract_items
 import config
@@ -23,7 +23,7 @@ if args.debug_mode:
     config.debug_mode = True
 
 BERT_MODEL_NAME = config.bert_model_name
-BERT_TOKENIZER = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
+# BERT_TOKENIZER = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
 # for macOS compatibility
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
@@ -152,11 +152,9 @@ def test(s_m, epoch, loader):
     print(f"epoch {epoch} eval, loss: {test_loss}, recall: {correct}/{exists}")
 
 if __name__ == '__main__':
-    bert_tokenizer = BERT_TOKENIZER
-    train_data = train_data[:4]
-    
-    train_dg = BertDataGenerator(train_data, bert_tokenizer)
-    train_dataset = MyDataset(*train_dg.pro_res())
+    bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
+    # train_data = train_data[:4]
+    train_dataset = MyDataset(train_data, BERT_MODEL_NAME)
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
@@ -165,9 +163,8 @@ if __name__ == '__main__':
         collate_fn=collate_fn,      # subprocesses for loading data
     )
 
-    dev_data = dev_data[:4]
-    test_dg = BertDataGenerator(dev_data, bert_tokenizer)
-    test_dataset = MyDataset(*test_dg.pro_res())
+    # dev_data = dev_data[:4]
+    test_dataset = MyDataset(dev_data, BERT_MODEL_NAME)
     test_loder = Data.DataLoader(
         dataset=test_dataset,
         batch_size=BATCH_SIZE,     

@@ -9,7 +9,7 @@ import os
 import torch.nn as nn
 import time
 from transformers import BertTokenizer
-from data_gen import BertDataGenerator, MyDataset, collate_fn
+from data_gen import MyDataset, collate_fn
 from model_bert_based import SubjectModel, ObjectModel
 from utils import extract_items
 import config
