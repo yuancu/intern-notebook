@@ -5,6 +5,7 @@ from tqdm import tqdm
 import torch
 import torch.utils.data as Data
 import os
+from datetime import datetime
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -36,7 +37,9 @@ EPOCH_NUM = config.epoch_num
 BATCH_SIZE = config.batch_size
 
 from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter(log_dir='./logs/subject')
+now = datetime.now()
+dt_string = now.strftime("%m_%d_%H_%M")
+writer = SummaryWriter(log_dir='./logs/subject/'+dt_string)
 
 file_dir = os.path.dirname(os.path.realpath(__file__))
 train_path = os.path.join(file_dir, 'generated/train_data_me.json')
@@ -107,7 +110,8 @@ def train(s_m, optimizer, epoch, loader, log_interval = 10):
         s1_correct = torch.logical_and(predicted_subject_start > 0.6, subject_start > 0.6).sum().item()
         s2_correct = torch.logical_and(predicted_subject_end > 0.6, subject_end > 0.6).sum().item()
         correct = s1_correct + s2_correct
-
+        writer.add_scalar('train/loss', loss_sum.item(), step+len(loader)*epoch)
+        writer.add_scalar('train/recall', correct/exists, step+len(loader)*epoch)
         if step % log_interval == 0:
             print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, recall: {correct}/{exists}")
 
@@ -149,7 +153,9 @@ def test(s_m, epoch, loader):
             s1_correct = torch.logical_and(predicted_subject_start > 0.6, subject_start > 0.6).sum().item()
             s2_correct = torch.logical_and(predicted_subject_end > 0.6, subject_end > 0.6).sum().item()
             correct = s1_correct + s2_correct
-    print(f"epoch {epoch} eval, loss: {test_loss}, recall: {correct}/{exists}")
+    print(f"epoch {epoch} eval, loss: {test_loss/len(loader)}, recall: {correct}/{exists}")
+    writer.add_scalar('val/loss', test_loss/len(loader), step+len(loader)*epoch)
+    writer.add_scalar('val/recall', correct/exists, step+len(loader)*epoch)
 
 if __name__ == '__main__':
     bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
@@ -193,5 +199,5 @@ if __name__ == '__main__':
     total_batch_step_cnt = 0
 
     for e in range(EPOCH_NUM):
-        train(s_m, optimizer, e, train_loader, log_interval = 10)
+        train(s_m, optimizer, e, train_loader, log_interval = 50)
         test(s_m, e, test_loder)
