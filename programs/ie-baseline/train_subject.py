@@ -14,6 +14,7 @@ import os
 import torch.utils.data as Data
 import torch.nn.functional as F
 import time
+from data_gen import MyDataset, collate_fn
 
 # for macOS compatibility
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -33,14 +34,6 @@ def get_now_time():
     a = time.time()
     return time.ctime(a)
 
-
-def seq_padding(X):
-    L = [len(x) for x in X]
-    ML = max(L)
-    # print("ML",ML)
-    return [x + [0] * (ML - len(x)) for x in X]
-
-
 def seq_padding_vec(X):
     L = [len(x) for x in X]
     ML = max(L)
@@ -59,113 +52,6 @@ id2predicate, predicate2id = json.load(open(generated_schema_path))
 id2predicate = {int(i): j for i, j in id2predicate.items()}
 id2char, char2id = json.load(open(generated_char_path))
 num_classes = len(id2predicate)
-
-
-class DataGenerator:
-    def __init__(self, data, batch_size=64):
-        self.data = data
-        self.batch_size = batch_size
-        self.steps = len(self.data) // self.batch_size
-        if len(self.data) % self.batch_size != 0:
-            self.steps += 1
-
-    def __len__(self):
-        return self.steps
-
-    def pro_res(self):
-        idxs = list(range(len(self.data)))
-        # print(idxs)
-        np.random.shuffle(idxs)
-        T, S1, S2, K1, K2, O1, O2, = [], [], [], [], [], [], []
-        for i in idxs:
-            d = self.data[i]
-            text = d['text']
-            items = {}
-            items = defaultdict(list)
-            for sp in d['spo_list']:
-                subjectid = text.find(sp[0])
-                objectid = text.find(sp[2])
-                if subjectid != -1 and objectid != -1:
-                    key = (subjectid, subjectid+len(sp[0])) # key is the span(start, end) of the subject
-                    # items is {(S_start, S_end): list of (O_start_pos, O_end_pos, predicate_id)}
-                    items[key].append(
-                        (objectid, objectid+len(sp[2]), predicate2id[sp[1]]))
-            if items:
-                # T is list of text tokens(ids)
-                T.append([char2id.get(c, 1) for c in text])  # 1是unk，0是padding
-         
-                # s1: one-hot vector where start of subject is 1
-                # s2: one-hot vector where end of subject is 1
-                s1, s2 = [0] * len(text), [0] * len(text)
-                for j in items:
-                    s1[j[0]] = 1
-                    s2[j[1]-1] = 1
-                # print(items.keys())
-                # k1, k2: randomly sampled (S_start, S_end) pair?
-                k1, k2 = choice(list(items.keys()))
-                # o1: zero vector, the start of each O is marked with its predicate ID
-                # o2: zero vector, the end of each O is marked with its predicate ID
-                o1, o2 = [0] * len(text), [0] * len(text)  # 0是unk类（共49+1个类）
-                for j in items[(k1, k2)]:
-                    o1[j[0]] = j[2]
-                    o2[j[1]-1] = j[2]
-                S1.append(s1)
-                S2.append(s2)
-                K1.append([k1])
-                K2.append([k2-1])
-                O1.append(o1)
-                O2.append(o2)
-
-        T = np.array(seq_padding(T))
-        S1 = np.array(seq_padding(S1))
-        S2 = np.array(seq_padding(S2))
-        O1 = np.array(seq_padding(O1))
-        O2 = np.array(seq_padding(O2))
-        K1, K2 = np.array(K1), np.array(K2)
-        return [T, S1, S2, K1, K2, O1, O2]
-
-
-class MyDataset(Data.Dataset):
-    """
-        下载数据、初始化数据，都可以在这里完成
-    """
-
-    def __init__(self, _T, _S1, _S2, _K1, _K2, _O1, _O2):
-        # xy = np.loadtxt('../dataSet/diabetes.csv.gz', delimiter=',', dtype=np.float32) # 使用numpy读取数据
-        self.x_data = _T
-        self.y1_data = _S1
-        self.y2_data = _S2
-        self.k1_data = _K1
-        self.k2_data = _K2
-        self.o1_data = _O1
-        self.o2_data = _O2
-        self.len = len(self.x_data)
-
-    def __getitem__(self, index):
-        return self.x_data[index], self.y1_data[index], self.y2_data[index], self.k1_data[index], self.k2_data[index], self.o1_data[index], self.o2_data[index]
-
-    def __len__(self):
-        return self.len
-
-
-def collate_fn(data):
-    t = np.array([item[0] for item in data], np.int32)
-    s1 = np.array([item[1] for item in data], np.int32)
-    s2 = np.array([item[2] for item in data], np.int32)
-    k1 = np.array([item[3] for item in data], np.int32)
-
-    k2 = np.array([item[4] for item in data], np.int32)
-    o1 = np.array([item[5] for item in data], np.int32)
-    o2 = np.array([item[6] for item in data], np.int32)
-    return {
-        'T': torch.LongTensor(t),  # targets_i
-        'S1': torch.FloatTensor(s1),
-        'S2': torch.FloatTensor(s2),
-        'K1': torch.LongTensor(k1),
-        'K2': torch.LongTensor(k2),
-        'O1': torch.LongTensor(o1),
-        'O2': torch.LongTensor(o2),
-    }
 
 def extract_items(text_in, s_m, po_m):
     R = []
@@ -298,9 +184,8 @@ def test(s_m, epoch, loader):
     print(f"epoch {epoch} eval, loss: {test_loss}, recall: {correct}/{exists}")
 
 if __name__ == '__main__':
-    train_data = train_data[:10000]
-    train_dg = DataGenerator(train_data)
-    train_dataset = MyDataset(*train_dg.pro_res())
+    # train_data = train_data[:4]
+    train_dataset = MyDataset(train_data)
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
@@ -309,9 +194,8 @@ if __name__ == '__main__':
         collate_fn=collate_fn,      # subprocesses for loading data
     )
 
-    dev_data = dev_data[:1000]
-    test_dg = DataGenerator(dev_data)
-    test_dataset = MyDataset(*test_dg.pro_res())
+    # dev_data = dev_data[:4]
+    test_dataset = MyDataset(dev_data)
     test_dataloder = Data.DataLoader(
         dataset=test_dataset,
         batch_size=BATCH_SIZE,     
