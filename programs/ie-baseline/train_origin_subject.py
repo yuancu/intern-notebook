@@ -18,6 +18,7 @@ from data_gen import NeatDataset, neat_collate_fn
 from model_origin import SubjectModel, ObjectModel
 from config import create_parser, predicate2id
 import config
+from utils import seq_max_pool
 
 def train(subject_model, device, train_loader, optimizer, epoch, writer=None, log_interval=10):
     subject_model.train()
@@ -28,15 +29,13 @@ def train(subject_model, device, train_loader, optimizer, epoch, writer=None, lo
             token_ids.to(device), attention_masks.to(device), subject_ids.to(device), \
             subject_labels.to(device), object_labels.to(device)
         # predict
-        subject_preds, hidden_states, _, _ = subject_model(token_ids)
+        subject_preds, hidden_states = subject_model(token_ids)
+        hidden_max, _ = seq_max_pool([hidden_states, attention_masks.unsqueeze(dim=2)])
         # calc loss
         subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
         attention_masks = attention_masks.unsqueeze(dim=2)
         subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks) # ()
-        # s1_loss = loss_fn(subject_preds[:,:,0], subject_start)
-        # s2_loss = loss_fn(subject_preds[:,:,1], subject_end)
         loss_sum = subject_loss
-        # print(loss_sum.item(), total_step_cnt)
         train_tqdm.set_postfix(loss=loss_sum.item())
         #updates
         optimizer.zero_grad()
@@ -48,6 +47,7 @@ def train(subject_model, device, train_loader, optimizer, epoch, writer=None, lo
 
         if writer:
             writer.add_scalar('subject/train_loss', loss_sum.item(), step + epoch * len(train_loader))
+            writer.add_scalar('subject/train_recall', correct/exists, step + epoch * len(train_loader))
         if step % log_interval == 0:
             print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, recall: {correct}/{exists}")
 
@@ -141,7 +141,6 @@ def main():
     print("DEFIN OPTIM")
     params = subject_model.parameters()
     optimizer = torch.optim.Adam(params, lr=LEARNING_RATE)
-    loss_fn = F.binary_cross_entropy
 
     now = datetime.now()
     dt_string = now.strftime("%m_%d_%H_%M")
@@ -157,7 +156,7 @@ def main():
     total_step_cnt = 0 # a counter for tensorboard writer
     for e in range(EPOCH_NUM):
         train(subject_model, device, train_loader, optimizer, e, writer=writer, log_interval=10)
-        # test(subject_model, device, test_loader)
+        test(subject_model, device, test_loader)
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method('spawn')

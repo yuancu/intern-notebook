@@ -151,3 +151,11 @@ def extract_items(text_in, tokenizer, s_m, po_m, id2predicate):
     _kk1s = np.array(_kk1s)
     return list(set(R))
 
+def seq_max_pool(x):
+    """seq是[None, seq_len, s_size]的格式，
+    mask是[None, seq_len, 1]的格式，先除去mask部分，
+    然后再做maxpooling。
+    """
+    seq, mask = x
+    seq = seq - (1 - mask) * 1e10
+    return torch.max(seq, 1)

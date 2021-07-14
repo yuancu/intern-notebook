@@ -4,18 +4,9 @@ import numpy as np
 #import matplotlib.pyplot as plt
 from torch.autograd import Variable
 from torch.nn.functional import dropout, sigmoid
+from utils import seq_max_pool
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-def seq_max_pool(x):
-    """seq是[None, seq_len, s_size]的格式，
-    mask是[None, seq_len, 1]的格式，先除去mask部分，
-    然后再做maxpooling。
-    """
-    seq, mask = x
-    seq = seq - (1 - mask) * 1e10
-    return torch.max(seq, 1)
 
 
 def seq_and_vec(x):
@@ -121,10 +112,12 @@ class SubjectModel(nn.Module):
             nn.Linear(word_emb_size, 1),
         )
 
-    def forward(self, t):
-        mask = torch.gt(torch.unsqueeze(t, 2), 0).type(
-            torch.FloatTensor).to(device)  # (batch_size,sent_len,1)
-        mask.requires_grad = False
+    def forward(self, t, mask=None):
+        if mask is None:
+            mask = torch.gt(t, 0).type(
+                torch.FloatTensor).to(device)  # (batch_size,sent_len,1)
+            mask.requires_grad = False
+        mask = torch.unsqueeze(mask, dim=2)
 
         outs = self.embeds(t)
         t = outs
@@ -147,7 +140,7 @@ class SubjectModel(nn.Module):
 
         subject_preds = torch.cat((ps1, ps2), dim=2)
 
-        return [subject_preds, t, t_max, mask]
+        return [subject_preds, t]
 
 
 
