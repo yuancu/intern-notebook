@@ -51,9 +51,10 @@ def train(subject_model, device, train_loader, optimizer, epoch, writer=None, lo
         if step % log_interval == 0:
             print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, recall: {correct}/{exists}")
 
-def test(subject_model, device, test_loader):
+def test(subject_model, device, test_loader, epoch, writer=None):
     subject_model.eval()
     test_loss = 0
+    exists = 0
     correct = 0
     with torch.no_grad():
         for batch in test_loader:
@@ -65,15 +66,13 @@ def test(subject_model, device, test_loader):
             subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
             attention_masks = attention_masks.unsqueeze(dim=2)
             subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks)
-            test_loss = subject_loss.item()  # sum up batch loss
-            pred = subject_preds > 0.6  # get the index of the max log-probability
-            correct += pred.eq(subject_labels > 0.6).sum().item()
-    test_loss /= len(test_loader.dataset)
-    print(
-        "\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
-            test_loss, correct, len(test_loader.dataset), 100.0 * correct / len(test_loader.dataset)
-        )
-    )
+            test_loss += subject_loss.item()  # sum up batch loss
+            exists += subject_labels.sum().item()
+            correct += torch.logical_and(subject_preds > 0.6, subject_labels > 0.6).sum().item()
+    print(f"Test for epoch {epoch}, loss: {test_loss}, recall: {correct}/{exists}")
+    if writer:
+        writer.add_scalar('subject/test_loss', test_loss, epoch)
+        writer.add_scalar('subject/test_recall', correct/exists,epoch)
 
 # macos only: use this command to work around the libomp issue (multiple libs are loaded)
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -156,7 +155,7 @@ def main():
     total_step_cnt = 0 # a counter for tensorboard writer
     for e in range(EPOCH_NUM):
         train(subject_model, device, train_loader, optimizer, e, writer=writer, log_interval=10)
-        test(subject_model, device, test_loader)
+        test(subject_model, device, test_loader, e)
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method('spawn')
