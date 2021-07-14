@@ -3,6 +3,7 @@ import os
 import json
 
 bert_model_name = "bert-base-chinese" # bert-base-chinese, hfl/chinese-bert-wwm-ext
+bert_dict_len = 21127
 epoch_num = 100
 word_emb_size = 768 # default bert embedding size
 # around 1.5% of the sentences would be truncated if set to 150
@@ -26,9 +27,11 @@ id2predicate = {int(i): j for i, j in id2predicate.items()}
 id2predicate[0] = "未分类"
 predicate2id["未分类"] = 0
 num_classes = len(predicate2id)
+logname = None
 
 def create_parser():
     parser = argparse.ArgumentParser(description='Process data')
     parser.add_argument('-bsz','--batch_size', help='Batch size', required=False, default=64, type=int)
     parser.add_argument('-debug', '--debug_mode', help="Turn on debug mode where only once sample is in train and eval",required=False, action='store_true')
+    parser.add_argument('--logname', type=str, help='subfolder name to store logs', required=False)
     return parser
