@@ -61,7 +61,7 @@ def test(subject_model, device, test_loader):
             token_ids, attention_masks, subject_ids, subject_labels, object_labels = \
                 token_ids.to(device), attention_masks.to(device), subject_ids.to(device), \
                 subject_labels.to(device), object_labels.to(device)
-            subject_preds, hidden_states = subject_model(token_ids, attention_mask=attention_masks)
+            subject_preds, hidden_states = subject_model(token_ids, mask=attention_masks)
             subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
             attention_masks = attention_masks.unsqueeze(dim=2)
             subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks)
