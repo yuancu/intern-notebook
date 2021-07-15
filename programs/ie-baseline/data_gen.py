@@ -12,56 +12,43 @@ MAX_SENTENCE_LEN = config.max_sentence_len
 NUM_CLASSES = config.num_classes
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-class DevDataGenerator:
+
+class MyDevDataset(Data.Dataset):
     def __init__(self, data, bert_model_name):
+        super().__init__()
         self.data = data
         self.tokenizer = BertTokenizerFast.from_pretrained(bert_model_name)
+
+    def __getitem__(self, index):
+        return self.process_data(self.data[index])
 
     def __len__(self):
         return len(self.data)
 
-    def pro_res(self):
-        idxs = list(range(len(self.data)))
-        np.random.shuffle(idxs)
-        texts, tokens, spoes, att_masks, offset_mappings = [], [], [], [], []
-        for i in tqdm(idxs, desc='Preparing Dev Data'):
-            d = self.data[i]
-            text = d['text']
-            output = self.tokenizer.encode_plus(text, max_length=MAX_SENTENCE_LEN, truncation=True, 
-                pad_to_max_length=True, return_offsets_mapping=True, return_tensors="pt")
-            token = output['input_ids']
-            att_mask = output['attention_mask']
-            offset_mapping = output['offset_mapping']
-            texts.append(text)
-            tokens.append(token)
-            att_masks.append(att_mask)
-            # print(i, d['spo_list'])
-            spoes.append(d['spo_list'])
-            offset_mappings.append(offset_mapping)
-        return texts, tokens, spoes, att_masks, offset_mappings
+    def process_data(self, d):
+        text = d['text']
+        output = self.tokenizer.encode_plus(text, max_length=MAX_SENTENCE_LEN, truncation=True, 
+            pad_to_max_length=True, return_offsets_mapping=True, return_tensors="pt")
+        token = output['input_ids']
+        att_mask = output['attention_mask']
+        offset_mapping = output['offset_mapping']
+        return text, token, d['spo_list'], att_mask, offset_mapping
 
-class MyDevDataset(Data.Dataset):
-    def __init__(self, texts, tokens, spoes, att_masks, offset_mappings):
-        super().__init__()
-        self.texts = texts
-        self.tokens = tokens
-        self.spoes = spoes
-        self.att_masks = att_masks
-        self.offset_mappings = offset_mappings
-
-    def __getitem__(self, index):
-        return self.texts[index], self.tokens[index], self.spoes[index], self.att_masks[index], self.offset_mappings[index]
-
-    def __len__(self):
-        return len(self.texts)
-    
+def dev_collate_fn(data):
+    texts = [item[0] for item in data]
+    tokens = [item[1] for item in data] # bsz *[(1, sent_len)]
+    tokens = torch.cat(tokens, dim=0) # (bsz, sent_len)
+    spoes = [item[2] for item in data] # bsz * [list of spoes]
+    att_masks = [item[3] for item in data] # bsz * [(1, sent_len)]
+    offset_mappings = [item[4] for item in data]
+    return texts, tokens, spoes, att_masks, offset_mappings
 
 
 class NeatDataset(Data.Dataset):
     def __init__(self, data, bert_model_name):
         super().__init__()
         self.data = data
-        self.tokenizer = BertTokenizerFast.from_pretrained("bert-base-chinese")
+        self.tokenizer = BertTokenizerFast.from_pretrained(bert_model_name) # "bert-base-chinese"
 
     def __len__(self):
         return len(self.data)
@@ -121,14 +108,7 @@ def neat_collate_fn(data):
     batch_object_labels = torch.FloatTensor(sequence_padding(batch_object_labels)).to(device)
     return batch_token_ids, batch_attention_masks, batch_subject_ids, batch_subject_labels, batch_object_labels
 
-def dev_collate_fn(data):
-    texts = [item[0] for item in data]
-    tokens = [item[1] for item in data] # bsz *[(1, sent_len)]
-    tokens = torch.cat(tokens, dim=0) # (bsz, sent_len)
-    spoes = [item[2] for item in data] # bsz * [list of spoes]
-    att_masks = [item[3] for item in data] # bsz * [(1, sent_len)]
-    offset_mappings = [item[4] for item in data]
-    return texts, tokens, spoes, att_masks, offset_mappings
+
 
 def search(pattern, sequence):
     """

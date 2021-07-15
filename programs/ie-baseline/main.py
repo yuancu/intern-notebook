@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BertTokenizer
 
-from data_gen import DevDataGenerator, MyDevDataset, NeatDataset, dev_collate_fn, neat_collate_fn
+from data_gen import MyDevDataset, NeatDataset, dev_collate_fn, neat_collate_fn
 from model_bert_based import SubjectModel, ObjectModel
 from utils import para_eval
 import config
@@ -67,8 +67,7 @@ if __name__ == '__main__':
         collate_fn=neat_collate_fn,      # subprocesses for loading data
     )
 
-    dev_generator = DevDataGenerator(dev_data, BERT_MODEL_NAME)
-    dev_dataset = MyDevDataset(*dev_generator.pro_res())
+    dev_dataset = MyDevDataset(dev_data, BERT_MODEL_NAME)
     dev_loader = Data.DataLoader(
         dataset=dev_dataset,
         batch_size=BATCH_SIZE,

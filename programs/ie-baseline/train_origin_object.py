@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from transformers import BertTokenizer
 from torch.utils.tensorboard import SummaryWriter
 
-from data_gen import DevDataGenerator, MyDevDataset, NeatDataset, dev_collate_fn, neat_collate_fn
+from data_gen import MyDevDataset, NeatDataset, dev_collate_fn, neat_collate_fn
 from model_origin import SubjectModel, ObjectModel
 from config import create_parser, predicate2id, id2predicate
 import config
@@ -121,10 +121,8 @@ def main():
         print("trying to overfit %i samples" % n_sample)
 
     # Process data
-    bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
-    train_dataset = NeatDataset(train_data, bert_tokenizer)
-    dev_dg = DevDataGenerator(dev_data, BERT_MODEL_NAME)
-    dev_dataset = MyDevDataset(*dev_dg.pro_res())
+    train_dataset = NeatDataset(train_data, BERT_MODEL_NAME)
+    dev_dataset = MyDevDataset(dev_data, BERT_MODEL_NAME)
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
