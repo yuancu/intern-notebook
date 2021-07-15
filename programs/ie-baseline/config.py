@@ -8,7 +8,7 @@ epoch_num = 200
 word_emb_size = 128 # default bert embedding size
 # around 1.5% of the sentences would be truncated if set to 150
 max_sentence_len = 128
-batch_size = 128
+batch_size = 512
 debug_mode = False
 debug_n_train_sample = 400
 debug_n_dev_sample = 100

@@ -128,7 +128,7 @@ def main():
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
-        num_workers=4,
+        num_workers=8,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
     )
 
