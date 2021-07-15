@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 import numpy as np
 #import matplotlib.pyplot as plt
 from torch.autograd import Variable
@@ -162,12 +163,12 @@ class ObjectModel(nn.Module):
 
         self.fc_ps1 = nn.Sequential(
             nn.Linear(word_emb_size, num_classes),
-            nn.Softmax(),
+            # nn.Sigmoid(),
         )
 
         self.fc_ps2 = nn.Sequential(
             nn.Linear(word_emb_size, num_classes),
-            nn.Softmax(),
+            # nn.Sigmoid(),
         )
 
     def forward(self, hidden_states, suject_pos, attention_mask=None):
@@ -191,6 +192,9 @@ class ObjectModel(nn.Module):
 
         po1 = self.fc_ps1(h)
         po2 = self.fc_ps2(h)
+
+        po1 = F.sigmoid(po1)
+        po2 = F.sigmoid(po2)
 
         object_preds = torch.stack((po1, po2), dim=3)
 
