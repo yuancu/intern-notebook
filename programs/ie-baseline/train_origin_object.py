@@ -158,9 +158,9 @@ def main():
     now = datetime.now()
     dt_string = now.strftime("%m_%d_%H_%M")
     if config.logname is None:
-        log_dir = os.path.join('logs', 'subject', dt_string)
+        log_dir = os.path.join('logs', dt_string)
     else:
-        log_dir = os.path.join('logs', 'subject', args.logname + '_' + dt_string)
+        log_dir = os.path.join('logs', args.logname + '_' + dt_string)
     writer = SummaryWriter(log_dir=log_dir)
     print("Logs are saved at:", log_dir)
     print("Run this command at the current folder to launch tensorboard:")
