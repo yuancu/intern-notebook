@@ -49,9 +49,14 @@ def sequence_padding(inputs, length=None, value=0, seq_dims=1, mode='post'):
     return np.array(outputs)
 
 
-def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model, id2predicate, attention_mask=None):
+def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model, id2predicate, attention_mask=None, writer=None, global_step=None):
     subject_preds, hidden_states = subject_model(token_ids) #(batch_size, sent_len, 2)
     # magic numbers come from https://github.com/bojone/bert4keras/blob/master/examples/task_relation_extraction.py
+
+    extracted_subjects = (subject_preds > 0.55).sum().item()
+    if writer is not None and global_step is not None:
+        writer.add_scalar('eval/extracted_subject', extracted_subjects/2, global_step)
+    
     batch_size = subject_preds.shape[0]
     spoes = []
     for k in range(batch_size):
@@ -92,7 +97,7 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
                             break
         return spoes
 
-def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=False):
+def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=False, epoch=None, writer=None):
     """
     Returns:
     f1, precision, recall
@@ -101,7 +106,7 @@ def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=Fals
     cnt = 0
     for step, batch in tqdm(iter(enumerate(loader)), desc='Eval'):
         texts, tokens, spoes, att_masks, offset_mappings = batch
-        R = set(extract_spoes(texts, tokens, offset_mappings, subject_model, object_model, id2predicate, attention_mask=att_masks))
+        R = set(extract_spoes(texts, tokens, offset_mappings, subject_model, object_model, id2predicate, attention_mask=att_masks, writer=writer, global_step=epoch*len(loader)+step))
         T = set()
         for spo_list in spoes:
             T.update([tuple(spo) for spo in spo_list])
