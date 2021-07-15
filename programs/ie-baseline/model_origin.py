@@ -112,22 +112,22 @@ class SubjectModel(nn.Module):
             nn.Linear(word_emb_size, 1),
         )
 
-    def forward(self, t, mask=None):
-        if mask is None:
-            mask = torch.gt(t, 0).type(
+    def forward(self, t, attention_mask=None):
+        if attention_mask is None:
+            attention_mask = torch.gt(t, 0).type(
                 torch.FloatTensor).to(device)  # (batch_size,sent_len,1)
-            mask.requires_grad = False
-        mask = torch.unsqueeze(mask, dim=2)
+            attention_mask.requires_grad = False
+        attention_mask = torch.unsqueeze(attention_mask, dim=2)
 
         outs = self.embeds(t)
         t = outs
         t = self.fc1_dropout(t)
-        t = t.mul(mask)  # (batch_size,sent_len,char_size)
+        t = t.mul(attention_mask)  # (batch_size,sent_len,char_size)
 
         t, (h_n, c_n) = self.lstm1(t, None)
         t, (h_n, c_n) = self.lstm2(t, None)
 
-        t_max, t_max_index = seq_max_pool([t, mask])
+        t_max, t_max_index = seq_max_pool([t, attention_mask])
         t_dim = list(t.size())[-1]
         h = seq_and_vec([t, t_max])
 
@@ -146,7 +146,7 @@ class SubjectModel(nn.Module):
 
 
 class ObjectModel(nn.Module):
-    def __init__(self, word_dict_length, word_emb_size, lstm_hidden_size, num_classes):
+    def __init__(self, word_emb_size, num_classes):
         super(ObjectModel, self).__init__()
 
         self.conv1 = nn.Sequential(
@@ -161,23 +161,29 @@ class ObjectModel(nn.Module):
         )
 
         self.fc_ps1 = nn.Sequential(
-            nn.Linear(word_emb_size, num_classes+1),
-            # nn.Softmax(),
+            nn.Linear(word_emb_size, num_classes),
+            nn.Softmax(),
         )
 
         self.fc_ps2 = nn.Sequential(
-            nn.Linear(word_emb_size, num_classes+1),
-            # nn.Softmax(),
+            nn.Linear(word_emb_size, num_classes),
+            nn.Softmax(),
         )
 
-    def forward(self, t, t_max, k1, k2):
+    def forward(self, hidden_states, suject_pos, attention_mask=None):
+        k1 = suject_pos[:, 0]
+        k2 = suject_pos[:, 1]
+        if attention_mask is not None:
+            hidden_max, _ = seq_max_pool([hidden_states, attention_mask.unsqueeze(dim=2)])
+        else:
+            hidden_max, _ = seq_max_pool([hidden_states, torch.ones((hidden_states.shape[0], hidden_states.shape[1], 1))])
 
-        k1 = seq_gather([t, k1])
+        k1 = seq_gather([hidden_states, k1])
 
-        k2 = seq_gather([t, k2])
+        k2 = seq_gather([hidden_states, k2])
 
         k = torch.cat([k1, k2], 1)
-        h = seq_and_vec([t, t_max])
+        h = seq_and_vec([hidden_states, hidden_max])
         h = seq_and_vec([h, k])
         h = h.permute(0, 2, 1)
         h = self.conv1(h)
@@ -186,4 +192,6 @@ class ObjectModel(nn.Module):
         po1 = self.fc_ps1(h)
         po2 = self.fc_ps2(h)
 
-        return [po1, po2]
+        object_preds = torch.stack((po1, po2), dim=3)
+
+        return object_preds

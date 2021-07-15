@@ -16,9 +16,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 from data_gen import NeatDataset, neat_collate_fn
 from model_origin import SubjectModel, ObjectModel
-from config import create_parser, predicate2id
+from config import create_parser, predicate2id, id2predicate
 import config
-from utils import seq_max_pool
+from utils import para_eval, seq_max_pool
 
 def train(subject_model, object_model, device, train_loader, optimizer, epoch, writer=None, log_interval=10):
     subject_model.train()
@@ -35,21 +35,29 @@ def train(subject_model, object_model, device, train_loader, optimizer, epoch, w
         subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
         attention_masks = attention_masks.unsqueeze(dim=2)
         subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks) # ()
-        loss_sum = subject_loss
+        object_loss = F.binary_cross_entropy(object_preds, object_labels, reduction='none') # (bsz, sent_len, n_classes, 2)
+        object_loss = torch.mean(object_loss, dim=2) # (bsz, sent_len, 2)
+        object_loss = torch.sum(object_loss * attention_masks) / torch.sum(attention_masks) # ()
+        loss_sum = subject_loss * 2.5 + object_loss
         train_tqdm.set_postfix(loss=loss_sum.item())
         #updates
         optimizer.zero_grad()
         loss_sum.backward()
         optimizer.step()
 
-        exists = subject_labels.sum().item()
-        correct = torch.logical_and(subject_preds > 0.6, subject_labels > 0.6).sum().item()
+        exists_subject = subject_labels.sum().item()
+        correct_subject = torch.logical_and(subject_preds > 0.6, subject_labels > 0.6).sum().item()
+        exists_object = object_labels.sum().item()
+        correct_object = torch.logical_and(object_preds > 0.5, object_labels > 0.5).sum().item()
 
-        if writer:
-            writer.add_scalar('subject/train_loss', loss_sum.item(), step + epoch * len(train_loader))
-            writer.add_scalar('subject/train_recall', correct/exists, step + epoch * len(train_loader))
         if step % log_interval == 0:
-            print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, recall: {correct}/{exists}")
+            print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, subject_recall: {correct_subject}/{exists_subject}, object_recall: {correct_object}/{exists_object}")
+            if writer:
+                writer.add_scalar('loss', loss_sum.item(), step + epoch * len(train_loader))
+                writer.add_scalar('loss_subject', subject_loss.item(), step + epoch * len(train_loader))
+                writer.add_scalar('loss_object', object_loss.item(), step + epoch * len(train_loader))
+                writer.add_scalar('recall_subject', correct_subject/exists_subject, step + epoch * len(train_loader))
+                writer.add_scalar('recall_object', correct_object/exists_object, step + epoch * len(train_loader))
 
 def test(subject_model, device, test_loader, epoch, writer=None):
     subject_model.eval()
@@ -71,8 +79,16 @@ def test(subject_model, device, test_loader, epoch, writer=None):
             correct += torch.logical_and(subject_preds > 0.6, subject_labels > 0.6).sum().item()
     print(f"Test for epoch {epoch}, loss: {test_loss}, recall: {correct}/{exists}")
     if writer:
-        writer.add_scalar('subject/test_loss', test_loss, epoch)
-        writer.add_scalar('subject/test_recall', correct/exists,epoch)
+        writer.add_scalar('test_loss', test_loss, epoch)
+        writer.add_scalar('test_recall_subject', correct/exists,epoch)
+
+
+def evaluate(subject_model, object_model, loader, id2predicate, epoch, writer=None):
+    f1, precision, recall = para_eval(subject_model, object_model, loader, id2predicate)
+    if writer:
+        writer.add_scalar('eval/f1', f1, epoch)
+        writer.add_scalar('eval/precision', precision, epoch)
+        writer.add_scalar('eval/recall', recall, epoch)
 
 # macos only: use this command to work around the libomp issue (multiple libs are loaded)
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -104,6 +120,7 @@ def main():
     if config.debug_mode:
         n_sample = 4
         train_data = train_data[:n_sample]
+        dev_data = dev_data[:n_sample]
         print("trying to overfit %i samples" % n_sample)
 
     # Process data
@@ -153,12 +170,13 @@ def main():
     writer = SummaryWriter(log_dir=log_dir)
     print("Logs are saved at:", log_dir)
     print("Run this command at the current folder to launch tensorboard:")
-    print("tensorboard --logdir=logs/subject")
+    print("tensorboard --logdir=logs/object")
 
     total_step_cnt = 0 # a counter for tensorboard writer
     for e in range(EPOCH_NUM):
-        train(subject_model, device, train_loader, optimizer, e, writer=writer, log_interval=10)
-        test(subject_model, device, test_loader, e)
+        train(subject_model, object_model, device, train_loader, optimizer, e, writer=writer, log_interval=10)
+        # test(subject_model, device, test_loader, e)
+        evaluate(subject_model, object_model, test_loader, id2predicate, e, writer)
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method('spawn')
