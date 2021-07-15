@@ -86,7 +86,7 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
                             obj_text_tail = offset_mapping[_end][-1]
                             spoes.append(
                                 (text[sub_text_head: sub_text_tail+1], 
-                                id2predicate[predicate1.item()],
+                                id2predicate[int(predicate1.item())],
                                 text[obj_text_head: obj_text_tail+1])
                             )
                             break

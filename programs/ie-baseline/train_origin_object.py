@@ -85,6 +85,7 @@ def test(subject_model, device, test_loader, epoch, writer=None):
 
 def evaluate(subject_model, object_model, loader, id2predicate, epoch, writer=None):
     f1, precision, recall = para_eval(subject_model, object_model, loader, id2predicate)
+    print(f"Eval epoch {epoch}: f1: {f1}, precision: {precision}, recall: {recall}")
     if writer:
         writer.add_scalar('eval/f1', f1, epoch)
         writer.add_scalar('eval/precision', precision, epoch)
