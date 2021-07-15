@@ -87,7 +87,7 @@ class SubjectModel(nn.Module):
 
         # requires (batch, seq, channel)
         encoder_layer = nn.TransformerEncoderLayer(d_model=word_emb_size, nhead=8, batch_first=True)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=3)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=1)
 
         self.conv1 = nn.Sequential(
             nn.Conv1d(
@@ -122,6 +122,8 @@ class SubjectModel(nn.Module):
 
         t, (h_n, c_n) = self.lstm1(t, None)
         t, (h_n, c_n) = self.lstm2(t, None)
+
+        t = self.transformer_encoder(t)
 
         t_max, t_max_index = seq_max_pool([t, attention_mask])
         t_dim = list(t.size())[-1]
