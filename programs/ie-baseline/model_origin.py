@@ -1,10 +1,5 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
-import numpy as np
-#import matplotlib.pyplot as plt
-from torch.autograd import Variable
-from torch.nn.functional import dropout, sigmoid
 from utils import seq_max_pool
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -193,8 +188,8 @@ class ObjectModel(nn.Module):
         po1 = self.fc_ps1(h)
         po2 = self.fc_ps2(h)
 
-        po1 = F.sigmoid(po1)
-        po2 = F.sigmoid(po2)
+        po1 = torch.sigmoid(po1)
+        po2 = torch.sigmoid(po2)
 
         object_preds = torch.stack((po1, po2), dim=3)
 
