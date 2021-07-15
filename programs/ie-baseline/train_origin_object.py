@@ -53,11 +53,11 @@ def train(subject_model, object_model, device, train_loader, optimizer, epoch, w
         if step % log_interval == 0:
             print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, subject_recall: {correct_subject}/{exists_subject}, object_recall: {correct_object}/{exists_object}")
             if writer:
-                writer.add_scalar('loss', loss_sum.item(), step + epoch * len(train_loader))
-                writer.add_scalar('loss_subject', subject_loss.item(), step + epoch * len(train_loader))
-                writer.add_scalar('loss_object', object_loss.item(), step + epoch * len(train_loader))
-                writer.add_scalar('recall_subject', correct_subject/exists_subject, step + epoch * len(train_loader))
-                writer.add_scalar('recall_object', correct_object/exists_object, step + epoch * len(train_loader))
+                writer.add_scalar('train/loss', loss_sum.item(), step + epoch * len(train_loader))
+                writer.add_scalar('train/loss_subject', subject_loss.item(), step + epoch * len(train_loader))
+                writer.add_scalar('train/loss_object', object_loss.item(), step + epoch * len(train_loader))
+                writer.add_scalar('train/recall_subject', correct_subject/exists_subject, step + epoch * len(train_loader))
+                writer.add_scalar('train/recall_object', correct_object/exists_object, step + epoch * len(train_loader))
 
 def test(subject_model, device, test_loader, epoch, writer=None):
     subject_model.eval()
