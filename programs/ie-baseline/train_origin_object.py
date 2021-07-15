@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from transformers import BertTokenizer
 from torch.utils.tensorboard import SummaryWriter
 
-from data_gen import NeatDataset, neat_collate_fn
+from data_gen import DevDataGenerator, MyDevDataset, NeatDataset, dev_collate_fn, neat_collate_fn
 from model_origin import SubjectModel, ObjectModel
 from config import create_parser, predicate2id, id2predicate
 import config
@@ -114,9 +114,6 @@ def main():
     NUM_CLASSES = len(predicate2id)
     config.num_classes = NUM_CLASSES
 
-    # Set debug mode to True to only train on a small batch of data
-    config.debug_mode = False
-
     if config.debug_mode:
         n_sample = 4
         train_data = train_data[:n_sample]
@@ -126,7 +123,8 @@ def main():
     # Process data
     bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
     train_dataset = NeatDataset(train_data, bert_tokenizer)
-    dev_dataset = NeatDataset(dev_data, bert_tokenizer)
+    dev_dg = DevDataGenerator(dev_data, BERT_MODEL_NAME)
+    dev_dataset = MyDevDataset(*dev_dg.pro_res())
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
@@ -140,11 +138,10 @@ def main():
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=4,
-        collate_fn=neat_collate_fn,      # subprocesses for loading data
+        collate_fn=dev_collate_fn,      # subprocesses for loading data
         multiprocessing_context='spawn'
     )
 
-    print("DEFINE SUBJECT")
     subject_model = SubjectModel(BERT_DICT_LEN, WORD_EMB_SIZE).to(device)
     object_model = ObjectModel(WORD_EMB_SIZE, NUM_CLASSES).to(device)
     if torch.cuda.device_count() > 1:
@@ -156,7 +153,6 @@ def main():
     # for p in subject_model.bert.parameters():
     #     p.requires_grad = False
 
-    print("DEFIN OPTIM")
     params = subject_model.parameters()
     params = list(params) + list(object_model.parameters())
     optimizer = torch.optim.Adam(params, lr=LEARNING_RATE)
@@ -183,4 +179,5 @@ if __name__ == '__main__':
     parser = create_parser()
     args = parser.parse_args()
     config.logname = args.logname
+    config.debug_mode = args.debug_mode
     main()
