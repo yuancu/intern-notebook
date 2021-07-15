@@ -49,7 +49,7 @@ def sequence_padding(inputs, length=None, value=0, seq_dims=1, mode='post'):
     return np.array(outputs)
 
 
-def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model, id2predicate):
+def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model, id2predicate, attention_mask=None):
     subject_preds, hidden_states = subject_model(token_ids) #(batch_size, sent_len, 2)
     # magic numbers come from https://github.com/bojone/bert4keras/blob/master/examples/task_relation_extraction.py
     batch_size = subject_preds.shape[0]
@@ -67,7 +67,7 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
             subjects = torch.tensor(subjects)
             # create pseudo batch: repeat k-th embedding on newly inserted dim 0
             pseudo_states = torch.stack([hidden_states[k]]*len(subjects), dim=0) # (len(subjects), sent_len, emb_size)
-            object_preds = object_model(pseudo_states, subjects)
+            object_preds = object_model(pseudo_states, subjects, attention_mask=attention_mask)
             for subject, object_pred in zip(subjects, object_preds):
                 obj_start = torch.where(object_pred[:, :, 0] > 0.6)
                 obj_end = torch.where(object_pred[:, :, 1] > 0.5)
@@ -92,11 +92,15 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
         return spoes
 
 def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=False):
+    """
+    Returns:
+    f1, precision, recall
+    """
     A, B, C = 1e-10, 1e-10, 1e-10
     cnt = 0
     for step, batch in tqdm(iter(enumerate(loader)), desc='Eval'):
         texts, tokens, spoes, att_masks, offset_mappings = batch
-        R = set(extract_spoes(texts, tokens, offset_mappings, subject_model, object_model, id2predicate))
+        R = set(extract_spoes(texts, tokens, offset_mappings, subject_model, object_model, id2predicate, attention_mask=att_masks))
         T = set()
         for spo_list in spoes:
             T.update([tuple(spo) for spo in spo_list])

@@ -196,7 +196,7 @@ class ObjectModel(nn.Module):
             nn.Sigmoid()
         )
 
-    def forward(self, hidden_states, subject_pos):
+    def forward(self, hidden_states, subject_pos, attention_mask=None):
         """
         Extract objects with given subject positions
         
