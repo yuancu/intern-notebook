@@ -28,7 +28,7 @@ class MyDevDataset(Data.Dataset):
     def process_data(self, d):
         text = d['text']
         output = self.tokenizer.encode_plus(text, max_length=MAX_SENTENCE_LEN, truncation=True, 
-            pad_to_max_length=True, return_offsets_mapping=True, return_tensors="pt")
+            pad_to_max_length=True, return_offsets_mapping=True)
         token = output['input_ids']
         att_mask = output['attention_mask']
         offset_mapping = output['offset_mapping']
@@ -37,10 +37,12 @@ class MyDevDataset(Data.Dataset):
 def dev_collate_fn(data):
     texts = [item[0] for item in data]
     tokens = [item[1] for item in data] # bsz *[(1, sent_len)]
-    tokens = torch.cat(tokens, dim=0) # (bsz, sent_len)
+    # tokens = torch.cat(tokens, dim=0) # (bsz, sent_len)
     spoes = [item[2] for item in data] # bsz * [list of spoes]
     att_masks = [item[3] for item in data] # bsz * [(1, sent_len)]
     offset_mappings = [item[4] for item in data]
+    tokens = torch.tensor(tokens).to(device)
+    att_masks = torch.tensor(att_masks).to(device)
     return texts, tokens, spoes, att_masks, offset_mappings
 
 
