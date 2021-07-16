@@ -29,7 +29,7 @@ def train(subject_model, object_model, device, train_loader, optimizer, epoch, w
             token_ids.to(device), attention_masks.to(device), subject_ids.to(device), \
             subject_labels.to(device), object_labels.to(device)
         # predict
-        subject_preds, hidden_states = subject_model(token_ids)
+        subject_preds, hidden_states = subject_model(token_ids, attention_mask=attention_masks)
         object_preds = object_model(hidden_states, subject_ids, attention_masks)
         # calc loss
         subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
@@ -59,18 +59,18 @@ def train(subject_model, object_model, device, train_loader, optimizer, epoch, w
                 writer.add_scalar('train/recall_subject', correct_subject/exists_subject, step + epoch * len(train_loader))
                 writer.add_scalar('train/recall_object', correct_object/exists_object, step + epoch * len(train_loader))
 
-def test(subject_model, device, test_loader, epoch, writer=None):
+def dev_subject(subject_model, device, dev_loader, epoch, writer=None):
     subject_model.eval()
     test_loss = 0
     exists = 0
     correct = 0
     with torch.no_grad():
-        for batch in test_loader:
+        for batch in dev_loader:
             token_ids, attention_masks, subject_ids, subject_labels, object_labels = batch
             token_ids, attention_masks, subject_ids, subject_labels, object_labels = \
                 token_ids.to(device), attention_masks.to(device), subject_ids.to(device), \
                 subject_labels.to(device), object_labels.to(device)
-            subject_preds, hidden_states = subject_model(token_ids, mask=attention_masks)
+            subject_preds, hidden_states = subject_model(token_ids, attention_mask=attention_masks)
             subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
             attention_masks = attention_masks.unsqueeze(dim=2)
             subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks)
@@ -123,7 +123,8 @@ def main():
 
     # Process data
     train_dataset = NeatDataset(train_data, BERT_MODEL_NAME)
-    dev_dataset = MyDevDataset(dev_data, BERT_MODEL_NAME)
+    dev_dataset = NeatDataset(dev_data, BERT_MODEL_NAME)
+    test_dataset = MyDevDataset(dev_data, BERT_MODEL_NAME)
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
@@ -131,9 +132,16 @@ def main():
         num_workers=8,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
     )
-
+    dev_loader = Data.DataLoader(
+        dataset=test_dataset,      # torch TensorDataset format
+        batch_size=BATCH_SIZE,      # mini batch size
+        shuffle=True,               # random shuffle for training
+        num_workers=4,
+        collate_fn=dev_collate_fn,      # subprocesses for loading data
+        multiprocessing_context='spawn'
+    )
     test_loader = Data.DataLoader(
-        dataset=dev_dataset,      # torch TensorDataset format
+        dataset=test_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=4,
@@ -170,7 +178,7 @@ def main():
     total_step_cnt = 0 # a counter for tensorboard writer
     for e in range(EPOCH_NUM):
         train(subject_model, object_model, device, train_loader, optimizer, e, writer=writer, log_interval=10)
-        # test(subject_model, device, test_loader, e)
+        dev_subject(subject_model, device, test_loader, epoch=e, writer=writer)
         evaluate(subject_model, object_model, test_loader, id2predicate, e, writer)
 
 if __name__ == '__main__':
@@ -179,4 +187,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config.logname = args.logname
     config.debug_mode = args.debug_mode
+    if args.batch_size is not None:
+        config.batch_size = args.batch_size
     main()
