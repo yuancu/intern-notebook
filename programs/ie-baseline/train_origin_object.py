@@ -8,7 +8,7 @@ import json
 from tqdm.auto import tqdm
 from tqdm.auto import trange
 import torch
-import torch.utils.data as Data
+from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BertTokenizer
@@ -22,6 +22,7 @@ from utils import para_eval, seq_max_pool
 
 def train(subject_model, object_model, device, train_loader, optimizer, epoch, writer=None, log_interval=10):
     subject_model.train()
+    object_model.train()
     train_tqdm = tqdm(enumerate(train_loader), desc="Train")
     for step, batch in train_tqdm:
         token_ids, attention_masks, subject_ids, subject_labels, object_labels = batch
@@ -84,6 +85,8 @@ def dev_subject(subject_model, device, dev_loader, epoch, writer=None):
 
 
 def evaluate(subject_model, object_model, loader, id2predicate, epoch, writer=None):
+    subject_model.eval()
+    object_model.eval()
     f1, precision, recall = para_eval(subject_model, object_model, loader, id2predicate, epoch=epoch, writer=writer)
     print(f"Eval epoch {epoch}: f1: {f1}, precision: {precision}, recall: {recall}")
     if writer:
@@ -125,28 +128,30 @@ def main():
     train_dataset = NeatDataset(train_data, BERT_MODEL_NAME)
     dev_dataset = NeatDataset(dev_data, BERT_MODEL_NAME)
     test_dataset = MyDevDataset(dev_data, BERT_MODEL_NAME)
-    train_loader = Data.DataLoader(
+    train_loader = DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=8,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
+        pin_memory=True
     )
-    dev_loader = Data.DataLoader(
+    dev_loader = DataLoader(
         dataset=dev_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=8,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
-        multiprocessing_context='spawn'
+        pin_memory=True
     )
-    test_loader = Data.DataLoader(
+    test_loader = DataLoader(
         dataset=test_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=4,
         collate_fn=dev_collate_fn,      # subprocesses for loading data
-        multiprocessing_context='spawn'
+        multiprocessing_context='spawn',
+        pin_memory=True
     )
 
     subject_model = SubjectModel(BERT_DICT_LEN, WORD_EMB_SIZE).to(device)
