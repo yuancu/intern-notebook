@@ -134,7 +134,6 @@ def main():
         shuffle=True,               # random shuffle for training
         num_workers=8,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
-        pin_memory=True
     )
     dev_loader = DataLoader(
         dataset=dev_dataset,      # torch TensorDataset format
@@ -142,7 +141,6 @@ def main():
         shuffle=True,               # random shuffle for training
         num_workers=8,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
-        pin_memory=True
     )
     test_loader = DataLoader(
         dataset=test_dataset,      # torch TensorDataset format
@@ -151,7 +149,6 @@ def main():
         num_workers=4,
         collate_fn=dev_collate_fn,      # subprocesses for loading data
         multiprocessing_context='spawn',
-        pin_memory=True
     )
 
     subject_model = SubjectModel(BERT_DICT_LEN, WORD_EMB_SIZE).to(device)
