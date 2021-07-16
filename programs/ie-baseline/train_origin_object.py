@@ -38,7 +38,7 @@ def train(subject_model, object_model, device, train_loader, optimizer, epoch, w
         object_loss = F.binary_cross_entropy(object_preds, object_labels, reduction='none') # (bsz, sent_len, n_classes, 2)
         object_loss = torch.mean(object_loss, dim=2) # (bsz, sent_len, 2)
         object_loss = torch.sum(object_loss * attention_masks) / torch.sum(attention_masks) # ()
-        loss_sum = subject_loss * 2.5 + object_loss
+        loss_sum = subject_loss + object_loss * 10
         train_tqdm.set_postfix(loss=loss_sum.item())
         #updates
         optimizer.zero_grad()
@@ -65,7 +65,7 @@ def dev_subject(subject_model, device, dev_loader, epoch, writer=None):
     exists = 0
     correct = 0
     with torch.no_grad():
-        for batch in dev_loader:
+        for batch in tqdm(dev_loader, desc="Dev(subj)"):
             token_ids, attention_masks, subject_ids, subject_labels, object_labels = batch
             token_ids, attention_masks, subject_ids, subject_labels, object_labels = \
                 token_ids.to(device), attention_masks.to(device), subject_ids.to(device), \
