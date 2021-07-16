@@ -113,6 +113,9 @@ def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=Fals
         A += len(R & T)
         B += len(R)
         C += len(T)
+        if writer is not None:
+            writer.add_text("eval/extracted_spo", str(R), epoch*len(loader)+step)
+            writer.add_text("eval/gold_spo", str(T), epoch*len(loader)+step)
         # if cnt % 1000 == 0:
         #     print('iter: %d f1: %.4f, precision: %.4f, recall: %.4f\n' % (cnt, 2 * A / (B + C), A / B, A / C))
         cnt += 1
