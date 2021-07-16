@@ -50,59 +50,60 @@ def sequence_padding(inputs, length=None, value=0, seq_dims=1, mode='post'):
 
 
 def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model, id2predicate, attention_mask=None, writer=None, global_step=None):
-    subject_preds, hidden_states = subject_model(token_ids) #(batch_size, sent_len, 2)
-    # magic numbers come from https://github.com/bojone/bert4keras/blob/master/examples/task_relation_extraction.py
+    with torch.no_grad():
+        subject_preds, hidden_states = subject_model(token_ids) #(batch_size, sent_len, 2)
+        # magic numbers come from https://github.com/bojone/bert4keras/blob/master/examples/task_relation_extraction.py
 
-    extracted_subjects = (subject_preds > 0.55).sum().item()
-    if writer is not None and global_step is not None:
-        writer.add_scalar('eval/extracted_subject', extracted_subjects/2, global_step)
-    
-    batch_size = subject_preds.shape[0]
-    spoes = []
-    all_subjects_text = []
-    for k in range(batch_size):
-        sub_start = torch.where(subject_preds[k, :, 0] > 0.6)[0]
-        sub_end = torch.where(subject_preds[k, :, 1] > 0.5)[0]
-        subjects = []
-        for i in sub_start:
-            j = sub_end[sub_end >= i]
-            if len(j) > 0:
-                j = j[0]
-                subjects.append((i, j))
-        text = texts[k]
-        offset_mapping = offset_mappings[k]
-        subjects_text = [text[offset_mapping[i][0]: offset_mapping[j][-1]] for i, j in subjects]
-        all_subjects_text += subjects_text
-        if subjects:
-            subjects = torch.tensor(subjects)
-            # create pseudo batch: repeat k-th embedding on newly inserted dim 0
-            pseudo_states = torch.stack([hidden_states[k]]*len(subjects), dim=0) # (len(subjects), sent_len, emb_size)
-            pseudo_mask = torch.stack([attention_mask[k]]*len(subjects), dim=0)
-            object_preds = object_model(pseudo_states, subjects, attention_mask=pseudo_mask)
-            for subject, object_pred in zip(subjects, object_preds):
-                obj_start = torch.where(object_pred[:, :, 0] > 0.6)
-                obj_end = torch.where(object_pred[:, :, 1] > 0.5)
-                for _start, predicate1 in zip(*obj_start):
-                    for _end, predicate2 in zip(*obj_end):
-                        if _start <= _end and predicate1 == predicate2:
-                            text = texts[k]
-                            offset_mapping = offset_mappings[k]
-                            # Tokens and chars in are not one-to-one mapped, we need to do
-                            # a remapping using the offset_mapping returned from tokenizer.
-                            # offset_mapping is a list of (token_head, token_tail) pairs
-                            sub_text_head = offset_mapping[subject[0]][0]
-                            sub_text_tail = offset_mapping[subject[1]][-1]
-                            obj_text_head = offset_mapping[_start][0]
-                            obj_text_tail = offset_mapping[_end][-1]
-                            spoes.append(
-                                (text[sub_text_head: sub_text_tail], 
-                                id2predicate[int(predicate1.item())],
-                                text[obj_text_head: obj_text_tail])
-                            )
-                            break
+        extracted_subjects = (subject_preds > 0.55).sum().item()
         if writer is not None and global_step is not None:
-            writer.add_text('eval/extracted_subject', str(all_subjects_text), global_step)
-        return spoes
+            writer.add_scalar('eval/extracted_subject', extracted_subjects/2, global_step)
+        
+        batch_size = subject_preds.shape[0]
+        spoes = []
+        all_subjects_text = []
+        for k in range(batch_size):
+            sub_start = torch.where(subject_preds[k, :, 0] > 0.6)[0]
+            sub_end = torch.where(subject_preds[k, :, 1] > 0.5)[0]
+            subjects = []
+            for i in sub_start:
+                j = sub_end[sub_end >= i]
+                if len(j) > 0:
+                    j = j[0]
+                    subjects.append((i, j))
+            text = texts[k]
+            offset_mapping = offset_mappings[k]
+            subjects_text = [text[offset_mapping[i][0]: offset_mapping[j][-1]] for i, j in subjects]
+            all_subjects_text += subjects_text
+            if subjects:
+                subjects = torch.tensor(subjects)
+                # create pseudo batch: repeat k-th embedding on newly inserted dim 0
+                pseudo_states = torch.stack([hidden_states[k]]*len(subjects), dim=0) # (len(subjects), sent_len, emb_size)
+                pseudo_mask = torch.stack([attention_mask[k]]*len(subjects), dim=0)
+                object_preds = object_model(pseudo_states, subjects, attention_mask=pseudo_mask)
+                for subject, object_pred in zip(subjects, object_preds):
+                    obj_start = torch.where(object_pred[:, :, 0] > 0.6)
+                    obj_end = torch.where(object_pred[:, :, 1] > 0.5)
+                    for _start, predicate1 in zip(*obj_start):
+                        for _end, predicate2 in zip(*obj_end):
+                            if _start <= _end and predicate1 == predicate2:
+                                text = texts[k]
+                                offset_mapping = offset_mappings[k]
+                                # Tokens and chars in are not one-to-one mapped, we need to do
+                                # a remapping using the offset_mapping returned from tokenizer.
+                                # offset_mapping is a list of (token_head, token_tail) pairs
+                                sub_text_head = offset_mapping[subject[0]][0]
+                                sub_text_tail = offset_mapping[subject[1]][-1]
+                                obj_text_head = offset_mapping[_start][0]
+                                obj_text_tail = offset_mapping[_end][-1]
+                                spoes.append(
+                                    (text[sub_text_head: sub_text_tail], 
+                                    id2predicate[int(predicate1.item())],
+                                    text[obj_text_head: obj_text_tail])
+                                )
+                                break
+            if writer is not None and global_step is not None:
+                writer.add_text('eval/extracted_subject', str(all_subjects_text), global_step)
+            return spoes
 
 def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=False, epoch=None, writer=None):
     """

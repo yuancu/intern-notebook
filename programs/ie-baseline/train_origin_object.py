@@ -46,19 +46,20 @@ def train(subject_model, object_model, device, train_loader, optimizer, epoch, w
         loss_sum.backward()
         optimizer.step()
 
-        exists_subject = subject_labels.sum().item()
-        correct_subject = torch.logical_and(subject_preds > 0.6, subject_labels > 0.6).sum().item()
-        exists_object = object_labels.sum().item()
-        correct_object = torch.logical_and(object_preds > 0.5, object_labels > 0.5).sum().item()
+        with torch.no_grad():
+            exists_subject = subject_labels.sum().item()
+            correct_subject = torch.logical_and(subject_preds > 0.6, subject_labels > 0.6).sum().item()
+            exists_object = object_labels.sum().item()
+            correct_object = torch.logical_and(object_preds > 0.5, object_labels > 0.5).sum().item()
 
-        if step % log_interval == 0:
-            print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, subject_recall: {correct_subject}/{exists_subject}, object_recall: {correct_object}/{exists_object}")
-            if writer:
-                writer.add_scalar('train/loss', loss_sum.item(), step + epoch * len(train_loader))
-                writer.add_scalar('train/loss_subject', subject_loss.item(), step + epoch * len(train_loader))
-                writer.add_scalar('train/loss_object', object_loss.item(), step + epoch * len(train_loader))
-                writer.add_scalar('train/recall_subject', correct_subject/exists_subject, step + epoch * len(train_loader))
-                writer.add_scalar('train/recall_object', correct_object/exists_object, step + epoch * len(train_loader))
+            if step % log_interval == 0:
+                print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, subject_recall: {correct_subject}/{exists_subject}, object_recall: {correct_object}/{exists_object}")
+                if writer:
+                    writer.add_scalar('train/loss', loss_sum.item(), step + epoch * len(train_loader))
+                    writer.add_scalar('train/loss_subject', subject_loss.item(), step + epoch * len(train_loader))
+                    writer.add_scalar('train/loss_object', object_loss.item(), step + epoch * len(train_loader))
+                    writer.add_scalar('train/recall_subject', correct_subject/exists_subject, step + epoch * len(train_loader))
+                    writer.add_scalar('train/recall_object', correct_object/exists_object, step + epoch * len(train_loader))
 
 def dev_subject(subject_model, device, dev_loader, epoch, writer=None):
     subject_model.eval()
@@ -134,7 +135,6 @@ def main():
         shuffle=True,               # random shuffle for training
         num_workers=8,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
-        pin_memory=True
     )
     dev_loader = DataLoader(
         dataset=dev_dataset,      # torch TensorDataset format
@@ -142,7 +142,6 @@ def main():
         shuffle=True,               # random shuffle for training
         num_workers=8,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
-        pin_memory=True
     )
     test_loader = DataLoader(
         dataset=test_dataset,      # torch TensorDataset format
@@ -150,8 +149,7 @@ def main():
         shuffle=True,               # random shuffle for training
         num_workers=4,
         collate_fn=dev_collate_fn,      # subprocesses for loading data
-        multiprocessing_context='spawn',
-        pin_memory=True
+        multiprocessing_context='spawn'
     )
 
     subject_model = SubjectModel(BERT_DICT_LEN, WORD_EMB_SIZE).to(device)
@@ -183,7 +181,7 @@ def main():
     total_step_cnt = 0 # a counter for tensorboard writer
     for e in range(EPOCH_NUM):
         train(subject_model, object_model, device, train_loader, optimizer, e, writer=writer, log_interval=10)
-        dev_subject(subject_model, device, dev_loader, epoch=e, writer=writer)
+        # dev_subject(subject_model, device, dev_loader, epoch=e, writer=writer)
         evaluate(subject_model, object_model, test_loader, id2predicate, e, writer)
 
 if __name__ == '__main__':
