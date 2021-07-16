@@ -79,8 +79,8 @@ def dev_subject(subject_model, device, dev_loader, epoch, writer=None):
             correct += torch.logical_and(subject_preds > 0.6, subject_labels > 0.6).sum().item()
     print(f"Test for epoch {epoch}, loss: {test_loss}, recall: {correct}/{exists}")
     if writer:
-        writer.add_scalar('test_loss', test_loss, epoch)
-        writer.add_scalar('test_recall_subject', correct/exists,epoch)
+        writer.add_scalar('dev/subject_loss', test_loss, epoch)
+        writer.add_scalar('dev/recall_subject', correct/exists,epoch)
 
 
 def evaluate(subject_model, object_model, loader, id2predicate, epoch, writer=None):
