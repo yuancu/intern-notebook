@@ -33,7 +33,7 @@ def train(subject_model, object_model, device, train_loader, optimizer, epoch, w
         subject_preds, hidden_states = subject_model(token_ids, attention_mask=attention_masks)
         object_preds = object_model(hidden_states, subject_ids, attention_masks)
         # calc loss
-        subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
+        subject_loss = F.binary_cross_entropy(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
         attention_masks = attention_masks.unsqueeze(dim=2)
         subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks) # ()
         object_loss = F.binary_cross_entropy(object_preds, object_labels, reduction='none') # (bsz, sent_len, n_classes, 2)
