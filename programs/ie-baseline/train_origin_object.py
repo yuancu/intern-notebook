@@ -133,11 +133,11 @@ def main():
         collate_fn=neat_collate_fn,      # subprocesses for loading data
     )
     dev_loader = Data.DataLoader(
-        dataset=test_dataset,      # torch TensorDataset format
+        dataset=dev_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
-        num_workers=4,
-        collate_fn=dev_collate_fn,      # subprocesses for loading data
+        num_workers=8,
+        collate_fn=neat_collate_fn,      # subprocesses for loading data
         multiprocessing_context='spawn'
     )
     test_loader = Data.DataLoader(
@@ -178,7 +178,7 @@ def main():
     total_step_cnt = 0 # a counter for tensorboard writer
     for e in range(EPOCH_NUM):
         train(subject_model, object_model, device, train_loader, optimizer, e, writer=writer, log_interval=10)
-        dev_subject(subject_model, device, test_loader, epoch=e, writer=writer)
+        dev_subject(subject_model, device, dev_loader, epoch=e, writer=writer)
         evaluate(subject_model, object_model, test_loader, id2predicate, e, writer)
 
 if __name__ == '__main__':
