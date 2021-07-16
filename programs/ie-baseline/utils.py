@@ -59,6 +59,7 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
     
     batch_size = subject_preds.shape[0]
     spoes = []
+    all_subjects_text = []
     for k in range(batch_size):
         sub_start = torch.where(subject_preds[k, :, 0] > 0.6)[0]
         sub_end = torch.where(subject_preds[k, :, 1] > 0.5)[0]
@@ -68,6 +69,10 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
             if len(j) > 0:
                 j = j[0]
                 subjects.append((i, j))
+        text = texts[k]
+        offset_mapping = offset_mappings[k]
+        subjects_text = [text[offset_mapping[i][0]: offset_mapping[j][-1]] for i, j in subjects]
+        all_subjects_text += subjects_text
         if subjects:
             subjects = torch.tensor(subjects)
             # create pseudo batch: repeat k-th embedding on newly inserted dim 0
@@ -95,6 +100,8 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
                                 text[obj_text_head: obj_text_tail])
                             )
                             break
+        if writer is not None and global_step is not None:
+            writer.add_text('eval/extracted_subject', str(all_subjects_text), global_step)
         return spoes
 
 def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=False, epoch=None, writer=None):
