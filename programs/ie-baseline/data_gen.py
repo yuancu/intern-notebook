@@ -17,7 +17,7 @@ class MyDevDataset(Data.Dataset):
     def __init__(self, data, bert_model_name):
         super().__init__()
         self.data = data
-        self.tokenizer = BertTokenizerFast.from_pretrained(bert_model_name)
+        self.tokenizer = BertTokenizerFast.from_pretrained("bert-base-chinese")
 
     def __getitem__(self, index):
         return self.process_data(self.data[index])
@@ -50,7 +50,7 @@ class NeatDataset(Data.Dataset):
     def __init__(self, data, bert_model_name):
         super().__init__()
         self.data = data
-        self.tokenizer = BertTokenizerFast.from_pretrained(bert_model_name) # "bert-base-chinese"
+        self.tokenizer = BertTokenizerFast.from_pretrained("bert-base-chinese") # "bert-base-chinese"
 
     def __len__(self):
         return len(self.data)
