@@ -139,6 +139,9 @@ class SubjectModel(nn.Module):
         subject_preds = torch.cat((ps1, ps2), dim=2)
         subject_preds = torch.sigmoid(subject_preds)
 
+        if attention_mask is not None:
+            subject_preds *= attention_mask
+
         return [subject_preds, t]
 
 
@@ -197,6 +200,10 @@ class ObjectModel(nn.Module):
 
         po1 = torch.sigmoid(po1)
         po2 = torch.sigmoid(po2)
+
+        if attention_mask is not None:
+            po1 *= attention_mask.unsqueeze(dim=2)
+            po2 *= attention_mask.unsqueeze(dim=2)
 
         object_preds = torch.stack((po1, po2), dim=3)
 
