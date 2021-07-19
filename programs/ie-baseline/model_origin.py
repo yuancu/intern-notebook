@@ -171,25 +171,31 @@ class ObjectModel(nn.Module):
         )
 
     def forward(self, hidden_states, suject_pos, attention_mask=None):
-        k1 = suject_pos[:, 0]
+        k1 = suject_pos[:, 0] # (bsz)
         k2 = suject_pos[:, 1]
         if attention_mask is not None:
+            # (bsz, emb)
             hidden_max, _ = seq_max_pool([hidden_states, attention_mask.unsqueeze(dim=2)])
         else:
             hidden_max, _ = seq_max_pool([hidden_states, torch.ones((hidden_states.shape[0], hidden_states.shape[1], 1))])
 
+        # (bsz, emb)
         k1 = seq_gather([hidden_states, k1])
-
         k2 = seq_gather([hidden_states, k2])
 
+        # (bsz, emb*2)
         k = torch.cat([k1, k2], 1)
+        # (bsz, sent, emb*2)
         h = seq_and_vec([hidden_states, hidden_max])
+        print("h.shape", h.shape)
+        print("k.shape", k.shape)
+        # (bsz, sent, emb*4)
         h = seq_and_vec([h, k])
         h = h.permute(0, 2, 1)
-        h = self.conv1(h)
+        h = self.conv1(h) #(bsz, emb, sent)
         h = h.permute(0, 2, 1)
 
-        po1 = self.fc_ps1(h)
+        po1 = self.fc_ps1(h) # (bsz, sent, cls)
         po2 = self.fc_ps2(h)
 
         po1 = torch.sigmoid(po1)
