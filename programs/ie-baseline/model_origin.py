@@ -191,24 +191,41 @@ class ObjectModel(nn.Module):
         )
 
     def forward(self, hidden_states, suject_pos, attention_mask=None):
-        k1 = suject_pos[:, 0] # (bsz)
-        k2 = suject_pos[:, 1]
+        """
+        Extract objects with given subject positions
+        
+        Parameters
+        ----------
+        hidden_states: tensor
+            (batch_size, sent_len, embed_size) hidden states generated from bert
+        subject_pos: tensor
+            (batch_size, 2) start and end position of a sampled subject
+        attention_mask: tensor
+            (batch_size, sent_len) attention mask for each text
+
+        Returns
+        -------
+        preds: tensor
+            (batch_size, sent_len, predicate_num, 2) conditional-normalized hidden states
+        """ 
+
+        subj_head = suject_pos[:, 0] # (bsz)
+        subj_tail = suject_pos[:, 1]
         if attention_mask is not None:
             # (bsz, emb)
             hidden_max, _ = seq_max_pool([hidden_states, attention_mask.unsqueeze(dim=2)])
         else:
             hidden_max, _ = seq_max_pool([hidden_states, torch.ones((hidden_states.shape[0], hidden_states.shape[1], 1))])
 
-        # (bsz, emb)
-        k1 = seq_gather([hidden_states, k1])
-        k2 = seq_gather([hidden_states, k2])
-
-        # (bsz, emb*2)
-        k = torch.cat([k1, k2], 1)
-        # (bsz, sent, emb*2)
-        h = seq_and_vec([hidden_states, hidden_max])
-        # (bsz, sent, emb*4)
-        h = seq_and_vec([h, k])
+        # extract subject head and tail's embedding
+        subj_head_emb = seq_gather([hidden_states, subj_head]) # (bsz, emb)
+        subj_tail_emb = seq_gather([hidden_states, subj_tail])
+        subj_emb = torch.cat([subj_head_emb, subj_tail_emb], 1) # (bsz, emb*2)
+        
+        # repeat hidden_max sent_len times and concatenate it to hidden states
+        h = seq_and_vec([hidden_states, hidden_max]) # (bsz, sent, emb*2)
+        # repeat subject embedding sent_len times and concatenate it to h
+        h = seq_and_vec([h, subj_emb]) # (bsz, sent, emb*4)
         h = h.permute(0, 2, 1)
         h = self.conv1(h) #(bsz, emb, sent)
         h = h.permute(0, 2, 1)
