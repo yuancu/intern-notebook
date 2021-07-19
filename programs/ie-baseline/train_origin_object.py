@@ -160,8 +160,9 @@ def main():
         object_model = nn.DataParallel(object_model)
     print("word embeding size is", WORD_EMB_SIZE)
 
-    # for p in subject_model.bert.parameters():
-    #     p.requires_grad = False
+    if config.load_weight is not None:
+        subject_model.load_state_dict(torch.load(f"./save/subjec_{config.load_weight}", map_location=device))
+        object_model.load_state_dict(torch.load(f"./save/object_{config.load_weight}", map_location=device))
 
     params = subject_model.parameters()
     params = list(params) + list(object_model.parameters())
@@ -190,6 +191,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config.logname = args.logname
     config.debug_mode = args.debug_mode
+    config.load_weight = args.loadweight
     if args.batch_size is not None:
         config.batch_size = args.batch_size
     main()

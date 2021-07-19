@@ -17,6 +17,7 @@ load_processed_data = False
 save_processed_data = False
 processed_train_data_dir = os.path.join("generated", "train")
 processed_train_data_path = os.path.join(processed_train_data_dir, "processed.pkl")
+load_weight = None
 
 file_dir = os.path.dirname(os.path.realpath(__file__))
 train_path = os.path.join(file_dir, 'generated/train_data_me.json')
@@ -30,8 +31,9 @@ num_classes = len(predicate2id)
 logname = None
 
 def create_parser():
-    parser = argparse.ArgumentParser(description='Process data')
-    parser.add_argument('-bsz','--batch_size', help='Batch size', required=False, type=int)
-    parser.add_argument('-debug', '--debug_mode', help="Turn on debug mode where only once sample is in train and eval",required=False, action='store_true')
+    parser = argparse.ArgumentParser(description='Extract relations')
+    parser.add_argument('-bsz','--batch_size', help='batch size', required=False, type=int)
+    parser.add_argument('-debug', '--debug_mode', help="turn on debug mode where only once sample is in train and eval",required=False, action='store_true')
     parser.add_argument('--logname', type=str, help='subfolder name to store logs', required=False)
+    parser.add_argument('--loadweight', type=str, help='name of weight to load', required=False)
     return parser
