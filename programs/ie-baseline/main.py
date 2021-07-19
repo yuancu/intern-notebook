@@ -116,8 +116,7 @@ def main():
     dev_data = json.load(open(dev_path))
     id2char, char2id = json.load(open(generated_char_path))
 
-    NUM_CLASSES = len(predicate2id)
-    config.num_classes = NUM_CLASSES
+    NUM_CLASSES = config.num_classes
 
     if config.debug_mode:
         n_sample = 4
