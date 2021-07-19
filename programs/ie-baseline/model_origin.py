@@ -139,8 +139,6 @@ class SubjectModel(nn.Module):
         subject_preds = torch.cat((ps1, ps2), dim=2)
         subject_preds = torch.sigmoid(subject_preds)
 
-        subject_preds = torch.sigmoid(subject_preds)
-
         return [subject_preds, t]
 
 
