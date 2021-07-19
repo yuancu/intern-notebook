@@ -74,7 +74,15 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
             offset_mapping = offset_mappings[k]
             subjects_text = [text[offset_mapping[i][0]: offset_mapping[j][-1]] for i, j in subjects]
             all_subjects_text += subjects_text
+            # for subject in subjects:
+            #     subj_head = offset_mapping[subject[0]][0]
+            #     subj_tail = offset_mapping[subject[1]][-1]
+            #     subject_text = text[subj_head: subj_tail]
+            #     all_subjects_text.append(subject_text)
             if subjects:
+                # print("len(text)", len(text))
+                # print("len(token_ids)", len(token_ids))
+                # print("subject_preds.shape", subject_preds.shape)
                 subjects = torch.tensor(subjects)
                 # create pseudo batch: repeat k-th embedding on newly inserted dim 0
                 pseudo_states = torch.stack([hidden_states[k]]*len(subjects), dim=0) # (len(subjects), sent_len, emb_size)
@@ -91,8 +99,14 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
                                 # Tokens and chars in are not one-to-one mapped, we need to do
                                 # a remapping using the offset_mapping returned from tokenizer.
                                 # offset_mapping is a list of (token_head, token_tail) pairs
+                                # print("object_preds.shape", object_preds.shape)
+                                # print("len(offset_mapping)", len(offset_mapping))
+                                # print("subject[0]", subject[0])
+                                # print("subject[1]", subject[1])
                                 sub_text_head = offset_mapping[subject[0]][0]
                                 sub_text_tail = offset_mapping[subject[1]][-1]
+                                # print("_start", _start)
+                                # print("_end", _end)
                                 obj_text_head = offset_mapping[_start][0]
                                 obj_text_tail = offset_mapping[_end][-1]
                                 spoes.append(
