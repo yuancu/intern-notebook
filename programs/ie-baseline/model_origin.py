@@ -188,8 +188,6 @@ class ObjectModel(nn.Module):
         k = torch.cat([k1, k2], 1)
         # (bsz, sent, emb*2)
         h = seq_and_vec([hidden_states, hidden_max])
-        print("h.shape", h.shape)
-        print("k.shape", k.shape)
         # (bsz, sent, emb*4)
         h = seq_and_vec([h, k])
         h = h.permute(0, 2, 1)
