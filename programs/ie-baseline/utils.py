@@ -103,7 +103,7 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
                                 break
             if writer is not None and global_step is not None:
                 writer.add_text('eval/extracted_subject', str(all_subjects_text), global_step)
-            return spoes
+    return spoes
 
 def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=False, epoch=None, writer=None):
     """
