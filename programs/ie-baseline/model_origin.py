@@ -108,32 +108,49 @@ class SubjectModel(nn.Module):
             nn.Linear(word_emb_size, 1),
         )
 
-    def forward(self, t, attention_mask=None):
+    def forward(self, tokens, attention_mask=None):
+        """
+        Performs forward and backward propagation and updates weights
+
+        Parameters
+        ----------
+        tokens: tensor
+            (batch_size, sent_len) a batch of tokenized texts
+        attention_mask: tensor
+            (batch_size, sent_len) attention mask for each text
+
+        Returns
+        -------
+        subject_preds: tensor
+            (batch_size, sent_len, 2)
+        hidden_states: tensor
+            (batch_size, sent_len, embed_size)
+        """
         if attention_mask is None:
-            attention_mask = torch.gt(t, 0).type(
+            attention_mask = torch.gt(tokens, 0).type(
                 torch.FloatTensor).to(device)  # (batch_size,sent_len,1)
             attention_mask.requires_grad = False
         attention_mask = torch.unsqueeze(attention_mask, dim=2)
 
-        outs = self.embeds(t)
-        t = outs
-        t = self.fc1_dropout(t)
-        t = t.mul(attention_mask)  # (batch_size,sent_len,char_size)
+        outs = self.embeds(tokens) # (bsz, sent, emb)
+        hidden_states = outs
+        hidden_states = self.fc1_dropout(hidden_states)
+        hidden_states = hidden_states.mul(attention_mask)  # (bsz, sent, emb)
 
-        t, (h_n, c_n) = self.lstm1(t, None)
-        t, (h_n, c_n) = self.lstm2(t, None)
+        hidden_states, (h_n, c_n) = self.lstm1(hidden_states, None) # (bsz, sent, emb)
+        hidden_states, (h_n, c_n) = self.lstm2(hidden_states, None) # (bsz, sent, emb)
 
-        t = self.transformer_encoder(t)
+        hidden_states = self.transformer_encoder(hidden_states) # (bsz, sent, emb)
 
-        t_max, t_max_index = seq_max_pool([t, attention_mask])
-        t_dim = list(t.size())[-1]
-        h = seq_and_vec([t, t_max])
+        hidden_max, hidden_max_index = seq_max_pool([hidden_states, attention_mask]) # (bsz, emb)
+        hidden_dim = list(hidden_states.size())[-1]
+        h = seq_and_vec([hidden_states, hidden_max]) # (bsz, sent, emb * 2)
 
         h = h.permute(0, 2, 1)
         h = self.conv1(h)
-        h = h.permute(0, 2, 1)
+        h = h.permute(0, 2, 1) # (bsz, sent, emb)
 
-        ps1 = self.fc_ps1(h)
+        ps1 = self.fc_ps1(h) # (bsz, sent, 1)
         ps2 = self.fc_ps2(h)
 
         subject_preds = torch.cat((ps1, ps2), dim=2)
@@ -143,7 +160,7 @@ class SubjectModel(nn.Module):
 
         subject_preds = torch.sigmoid(subject_preds)
 
-        return [subject_preds, t]
+        return [subject_preds, hidden_states]
 
 
 
