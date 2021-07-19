@@ -144,46 +144,46 @@ def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=Fals
     return 2 * A / (B + C), A / B, A / C
 
 
-
-
-def extract_items(text_in, tokenizer, s_m, po_m, id2predicate):
+def extract_items(text_in,tokenizer, subject_model, object_model, id2predicate):
     R = []
     output = tokenizer.encode_plus(text_in, max_length=config.max_sentence_len, truncation=True, 
-                    pad_to_max_length=True, return_tensors="pt")
+                    pad_to_max_length=True, return_tensors="pt", return_offsets_mapping=True)
     tokens = output['input_ids']
     attention_mask = output['attention_mask']
-    attention_mask = attention_mask.unsqueeze(dim=2)
-    subject_preds, hidden_states = s_m(tokens.to(device))
+    offset_mapping = output['offset_mapping'][0]
+    
+    attention_mask = attention_mask.to(device)
+    subject_preds, hidden_states = subject_model(tokens.to(device), attention_mask)
     _k1, _k2 = subject_preds[0, :, 0], subject_preds[0, :, 1] # _k1: (1, sent_len)
-    t = hidden_states
-    _kk1s = []
     for i, _kk1 in enumerate(_k1):
         if _kk1 > 0.5:
             _subject = ''
             for j, _kk2 in enumerate(_k2[i:]):
                 if _kk2 > 0.5:
-                    _subject = text_in[i: i+j+1]
+                    sub_head = offset_mapping[i][0]
+                    sub_tail = offset_mapping[i+j][-1]
+                    _subject = text_in[sub_head: sub_tail]
                     break
             if _subject:
-                _k1, _k2 = torch.LongTensor([[i]]), torch.LongTensor(
-                    [[i+j]])  # np.array([i]), np.array([i+j])
-                object_preds = po_m(hidden_states, _k1, _k2)
-                _o1, _o2 = object_preds[:,:, 0], object_preds[:,:, 1]
-                _o1, _o2 = _o1.cpu().data.numpy(), _o2.cpu().data.numpy()
-
-                _o1, _o2 = np.argmax(_o1[0], 1), np.argmax(_o2[0], 1)
-
-                for i, _oo1 in enumerate(_o1):
-                    if _oo1 > 0:
-                        for j, _oo2 in enumerate(_o2[i:]):
-                            if _oo2 == _oo1:
-                                _object = text_in[i: i+j+1]
-                                _predicate = id2predicate[_oo1]
-                                # print((_subject, _predicate, _object))
-                                R.append((_subject, _predicate, _object))
-                                break
-        _kk1s.append(_kk1.data.cpu().numpy())
-    _kk1s = np.array(_kk1s)
+                _k1, _k2 = torch.LongTensor([i]), torch.LongTensor(
+                    [i+j])  
+                subject_pos = torch.stack((_k1, _k2), dim=1)
+                object_pred = object_model(hidden_states, subject_pos)
+                obj_start = torch.where(object_pred[0, :, :, 0] > 0.5)
+                obj_end = torch.where(object_pred[0, :, :, 1] > 0.4)
+                for _start, predicate1 in zip(*obj_start):
+                    for _end, predicate2 in zip(*obj_end):
+                        if _start <= _end and predicate1 == predicate2:
+                            # Tokens and chars in are not one-to-one mapped, we need to do
+                            # a remapping using the offset_mapping returned from tokenizer.
+                            # offset_mapping is a list of (token_head, token_tail) pairs
+                            obj_text_head = offset_mapping[_start][0]
+                            obj_text_tail = offset_mapping[_end][-1]
+                            R.append(
+                                (_subject, 
+                                id2predicate[predicate1.item()],
+                                text_in[obj_text_head: obj_text_tail])
+                            )
     return list(set(R))
 
 def seq_max_pool(x):
