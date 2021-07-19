@@ -1,226 +1,187 @@
-#! -*- coding:utf-8 -*-
 
-from collections import defaultdict
-import json
-import numpy as np
-from random import choice
-from tqdm import tqdm
-import model
-import torch
-import torch.nn as nn
-from torch.autograd import Variable
-#import data_prepare
+
 import os
+from datetime import datetime
+import json
+
+from tqdm.auto import tqdm
+from tqdm.auto import trange
+import torch
 import torch.utils.data as Data
+import torch.nn as nn
 import torch.nn.functional as F
-import time
-from data_gen import MyDataset, collate_fn
+from transformers import BertTokenizer
+from torch.utils.tensorboard import SummaryWriter
 
-# for macOS compatibility
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+from data_gen import NeatDataset, neat_collate_fn
+from model_bert_based import SubjectModel, ObjectModel
+from config import predicate2id
+import config
 
-torch.backends.cudnn.benchmark = True
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# ====================================#
+# 1. Import SMDebug framework class. #
+# ====================================#
+import smdebug.pytorch as smd
 
-CHAR_SIZE = 128
-SENT_LENGTH = 4
-HIDDEN_SIZE = 64
-EPOCH_NUM = 100
-
-BATCH_SIZE = 64
-
-
-def get_now_time():
-    a = time.time()
-    return time.ctime(a)
-
-def seq_padding_vec(X):
-    L = [len(x) for x in X]
-    ML = max(L)
-    # print("ML",ML)
-    return [x + [[1, 0]] * (ML - len(x)) for x in X]
-
-
-file_dir = os.path.dirname(os.path.realpath(__file__))
-train_path = os.path.join(file_dir, 'generated/train_data_me.json')
-dev_path = os.path.join(file_dir, 'generated/dev_data_me.json')
-generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
-generated_char_path = os.path.join(file_dir, 'generated/all_chars_me.json')
-train_data = json.load(open(train_path))
-dev_data = json.load(open(dev_path))
-id2predicate, predicate2id = json.load(open(generated_schema_path))
-id2predicate = {int(i): j for i, j in id2predicate.items()}
-id2char, char2id = json.load(open(generated_char_path))
-num_classes = len(id2predicate)
-
-def extract_items(text_in, s_m, po_m):
-    R = []
-    _s = [char2id.get(c, 1) for c in text_in]
-    _s = np.array([_s])
-    _k1, _k2, t, t_max, mask = s_m(torch.LongTensor(_s).to(device))
-    _k1, _k2 = _k1[0, :, 0], _k2[0, :, 0]
-    _kk1s = []
-    for i, _kk1 in enumerate(_k1):
-        if _kk1 > 0.5:
-            _subject = ''
-            for j, _kk2 in enumerate(_k2[i:]):
-                if _kk2 > 0.5:
-                    _subject = text_in[i: i+j+1]
-                    break
-            if _subject:
-                _k1, _k2 = torch.LongTensor([[i]]), torch.LongTensor(
-                    [[i+j]])  # np.array([i]), np.array([i+j])
-                _o1, _o2 = po_m(t.to(device), t_max.to(
-                    device), _k1.to(device), _k2.to(device))
-                _o1, _o2 = _o1.cpu().data.numpy(), _o2.cpu().data.numpy()
-
-                _o1, _o2 = np.argmax(_o1[0], 1), np.argmax(_o2[0], 1)
-
-                for i, _oo1 in enumerate(_o1):
-                    if _oo1 > 0:
-                        for j, _oo2 in enumerate(_o2[i:]):
-                            if _oo2 == _oo1:
-                                _object = text_in[i: i+j+1]
-                                _predicate = id2predicate[_oo1]
-                                # print((_subject, _predicate, _object))
-                                R.append((_subject, _predicate, _object))
-                                break
-        _kk1s.append(_kk1.data.cpu().numpy())
-    _kk1s = np.array(_kk1s)
-    return list(set(R))
-
-
-
-def evaluate():
-    A, B, C = 1e-10, 1e-10, 1e-10
-    cnt = 0
-    for d in tqdm(iter(dev_data)):
-        R = set(extract_items(d['text']))
-        T = set([tuple(i) for i in d['spo_list']])
-        A += len(R & T)
-        B += len(R)
-        C += len(T)
-        # if cnt % 1000 == 0:
-        #     print('iter: %d f1: %.4f, precision: %.4f, recall: %.4f\n' % (cnt, 2 * A / (B + C), A / B, A / C))
-        cnt += 1
-    return 2 * A / (B + C), A / B, A / C
-
-def train(s_m, optimizer, epoch, loader, log_interval = 10):
-    s_m.train()
-    for step, batch in tqdm(iter(enumerate(loader))):
-        t_s = batch["T"].to(device)
-        k1 = batch["K1"].to(device) # sampled subject
-        k2 = batch["K2"].to(device) # (batch_size, 1)
-        s1 = batch["S1"].to(device) # all subjects in 1-0 vector
-        s2 = batch["S2"].to(device) # (batch_size, sent_len)
-        o1 = batch["O1"].to(device) # objects
-        o2 = batch["O2"].to(device) # (batch_size, sent_len)
-    
-        ps_1, ps_2, t, t_max, mask = s_m(t_s)
-
-        ps_1 = ps_1.to(device)
-        ps_2 = ps_2.to(device)
-
-        s1 = torch.unsqueeze(s1, 2)
-        s2 = torch.unsqueeze(s2, 2)
-
-        s1_loss = F.binary_cross_entropy_with_logits(ps_1, s1)
-        s1_loss = torch.sum(s1_loss.mul(mask))/torch.sum(mask)
-        s2_loss = F.binary_cross_entropy_with_logits(ps_2, s2)
-        s2_loss = torch.sum(s2_loss.mul(mask))/torch.sum(mask)
-
-        loss_sum = s1_loss + s2_loss
-
+def train(subject_model, device, train_tqdm, optimizer, epoch, total_step_cnt, writer, log_interval, hook):
+    subject_model.train()
+    # =================================================#
+    # 2. Set the SMDebug hook for the training phase. #
+    # =================================================#
+    hook.set_mode(smd.modes.TRAIN)
+    init_step_cnt = total_step_cnt
+    for batch in train_tqdm:
+        token_ids, attention_masks, subject_ids, subject_labels, object_labels = batch
+        token_ids, attention_masks, subject_ids, subject_labels, object_labels = \
+            token_ids.to(device), attention_masks.to(device), subject_ids.to(device), \
+            subject_labels.to(device), object_labels.to(device)
+        # predict
+        subject_preds, hidden_states = subject_model(token_ids, attention_mask=attention_masks)
+        # calc loss
+        subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
+        attention_masks = attention_masks.unsqueeze(dim=2)
+        subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks) # ()
+        # s1_loss = loss_fn(subject_preds[:,:,0], subject_start)
+        # s2_loss = loss_fn(subject_preds[:,:,1], subject_end)
+        loss_sum = subject_loss
+        # loggings
+        writer.add_scalar('subject/loss', loss_sum.item(), total_step_cnt)
+        # print(loss_sum.item(), total_step_cnt)
+        total_step_cnt += 1
+        train_tqdm.set_postfix(loss=loss_sum.item())
+        #updates
         optimizer.zero_grad()
         loss_sum.backward()
         optimizer.step()
-        
-        exists = s1.sum().item() + s2.sum().item()
-        s1_correct = torch.logical_and(ps_1 > 0.6, s1 > 0.6).sum().item()
-        s2_correct = torch.logical_and(ps_2 > 0.6, s2 > 0.6).sum().item()
-        correct = s1_correct + s2_correct
+        batch_idx = total_step_cnt-init_step_cnt
+        if batch_idx % log_interval == 0:
+            print(
+                "Train Epoch: {} [{}]\tLoss: {:.6f}".format(
+                    epoch,
+                    batch_idx,
+                    loss_sum.item(),
+                )
+            )
+    return total_step_cnt
 
-        if step % log_interval == 0:
-            print(f"epoch {epoch}, step: {step}, loss: {loss_sum.item()}, recall: {correct}/{exists}")
-
-def test(s_m, epoch, loader):
-    s_m.eval()
+def test(subject_model, device, test_loader, hook):
+    subject_model.eval()
+    # ===================================================#
+    # 3. Set the SMDebug hook for the validation phase. #
+    # ===================================================#
+    hook.set_mode(smd.modes.EVAL)
     test_loss = 0
     correct = 0
-    exists = 0
     with torch.no_grad():
-        for step, batch in tqdm(iter(enumerate(loader))):
-            t_s = batch["T"].to(device)
-            k1 = batch["K1"].to(device) # sampled subject
-            k2 = batch["K2"].to(device) # (batch_size, 1)
-            s1 = batch["S1"].to(device) # all subjects in 1-0 vector
-            s2 = batch["S2"].to(device) # (batch_size, sent_len)
-            o1 = batch["O1"].to(device) # objects
-            o2 = batch["O2"].to(device) # (batch_size, sent_len)
-            ps_1, ps_2, t, t_max, mask = s_m(t_s)
+        for batch in test_loader:
+            token_ids, attention_masks, subject_ids, subject_labels, object_labels = batch
+            token_ids, attention_masks, subject_ids, subject_labels, object_labels = \
+                token_ids.to(device), attention_masks.to(device), subject_ids.to(device), \
+                subject_labels.to(device), object_labels.to(device)
+            subject_preds, hidden_states = subject_model(token_ids, attention_mask=attention_masks)
+            subject_loss = F.binary_cross_entropy_with_logits(subject_preds, subject_labels, reduction='none') # (bsz, sent_len)
+            attention_masks = attention_masks.unsqueeze(dim=2)
+            subject_loss = torch.sum(subject_loss * attention_masks) / torch.sum(attention_masks)
+            test_loss = subject_loss.item()  # sum up batch loss
+            pred = subject_preds > 0.6  # get the index of the max log-probability
+            correct += pred.eq(subject_labels > 0.6).sum().item()
+    test_loss /= len(test_loader.dataset)
+    print(
+        "\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
+            test_loss, correct, len(test_loader.dataset), 100.0 * correct / len(test_loader.dataset)
+        )
+    )
 
-            ps_1 = ps_1.to(device)
-            ps_2 = ps_2.to(device)
+# macos only: use this command to work around the libomp issue (multiple libs are loaded)
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
-            s1 = torch.unsqueeze(s1, 2)
-            s2 = torch.unsqueeze(s2, 2)
+def main():
+    BERT_MODEL_NAME = config.bert_model_name
+    LEARNING_RATE = config.learning_rate
+    WORD_EMB_SIZE = config.word_emb_size # default bert embedding size
+    EPOCH_NUM = config.epoch_num
+    BATCH_SIZE = config.batch_size
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-            s1_loss = F.binary_cross_entropy_with_logits(ps_1, s1)
-            s1_loss = torch.sum(s1_loss.mul(mask))/torch.sum(mask)
-            s2_loss = F.binary_cross_entropy_with_logits(ps_2, s2)
-            s2_loss = torch.sum(s2_loss.mul(mask))/torch.sum(mask)
+    file_dir = os.getcwd()
+    train_path = os.path.join(file_dir, 'generated/train_data_me.json')
+    dev_path = os.path.join(file_dir, 'generated/dev_data_me.json')
+    
+    generated_char_path = os.path.join(file_dir, 'generated/all_chars_me.json')
+    train_data = json.load(open(train_path))
+    dev_data = json.load(open(dev_path))
+    id2char, char2id = json.load(open(generated_char_path))
 
-            loss_sum = s1_loss + s2_loss
+    NUM_CLASSES = len(predicate2id)
+    config.num_classes = NUM_CLASSES
 
-            test_loss += loss_sum.item()
-            exists += s1.sum().item() + s2.sum().item()
-            s1_correct = torch.logical_and(ps_1 > 0.6, s1 > 0.6).sum().item()
-            s2_correct = torch.logical_and(ps_2 > 0.6, s2 > 0.6).sum().item()
-            # this should be for object
-            # exists += (s1 > 0).sum().item() + (s2 > 0).sum().item()
-            # s1_correct = torch.logical_and(ps_1 == s1, s1 != 0).sum().item()
-            # s2_correct = torch.logical_and(ps_2 == s2, s2 != 0).sum().item()
-            correct = s1_correct + s2_correct
-    print(f"epoch {epoch} eval, loss: {test_loss}, recall: {correct}/{exists}")
+    # Set debug mode to True to only train on a small batch of data
+    config.debug_mode = False
 
-if __name__ == '__main__':
-    # train_data = train_data[:4]
-    train_dataset = MyDataset(train_data)
+    if config.debug_mode:
+        n_sample = 4
+        train_data = train_data[:n_sample]
+        print("trying to overfit %i samples" % n_sample)
+
+    # Process data
+    bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
+    train_dataset = NeatDataset(train_data, bert_tokenizer)
+    dev_dataset = NeatDataset(dev_data, bert_tokenizer)
     train_loader = Data.DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=4,
-        collate_fn=collate_fn,      # subprocesses for loading data
+        collate_fn=neat_collate_fn,      # subprocesses for loading data
     )
 
-    # dev_data = dev_data[:4]
-    test_dataset = MyDataset(dev_data)
-    test_dataloder = Data.DataLoader(
-        dataset=test_dataset,
-        batch_size=BATCH_SIZE,     
-        shuffle=True,
+    test_loader = Data.DataLoader(
+        dataset=dev_dataset,      # torch TensorDataset format
+        batch_size=BATCH_SIZE,      # mini batch size
+        shuffle=True,               # random shuffle for training
         num_workers=4,
-        collate_fn=collate_fn,
+        collate_fn=neat_collate_fn,      # subprocesses for loading data
+        multiprocessing_context='spawn'
     )
 
-    # print("len",len(id2char))
-    s_m = model.s_model(len(char2id)+2, CHAR_SIZE, HIDDEN_SIZE).to(device)
-    
+    print("DEFINE SUBJECT")
+    subject_model = SubjectModel(WORD_EMB_SIZE).to(device)
     if torch.cuda.device_count() > 1:
         print('Using', torch.cuda.device_count(), "GPUs!")
-        s_m = nn.DataParallel(s_m)
+        subject_model = nn.DataParallel(subject_model)
+    print("word embeding size is", WORD_EMB_SIZE)
 
-    
-    params = list(s_m.parameters())
-    optimizer = torch.optim.Adam(params, lr=0.001)
+    # for p in subject_model.bert.parameters():
+    #     p.requires_grad = False
 
-    ce_loss = torch.nn.CrossEntropyLoss().to(device)
-    bce_loss = torch.nn.BCEWithLogitsLoss().to(device)
+    print("DEFIN OPTIM")
+    params = subject_model.parameters()
+    optimizer = torch.optim.Adam(params, lr=LEARNING_RATE)
+    loss_fn = F.binary_cross_entropy
 
-    best_f1 = 0
-    best_epoch = 0
+    now = datetime.now()
+    dt_string = now.strftime("%m_%d_%H_%M")
+    log_dir = os.path.join('logs', 'subject', dt_string)
+    writer = SummaryWriter(log_dir=log_dir)
+    print("Logs are saved at:", log_dir)
+    print("Run this command at the current folder to launch tensorboard:")
+    print("tensorboard --logdir=logs/subject")
 
-    for e in range(EPOCH_NUM):
-        train(s_m, optimizer, e, train_loader)
-        test(s_m, e, test_dataloder)
+    # ======================================================#
+    # 4. Register the SMDebug hook to save output tensors. #
+    # ======================================================#
+    hook = smd.Hook.create_from_json_file()
+    hook.register_hook(subject_model)
+
+    total_step_cnt = 0 # a counter for tensorboard writer
+    for e in trange(EPOCH_NUM, desc='Epoch'):
+        # ===========================================================#
+        # 5. Pass the SMDebug hook to the train and test functions. #
+        # ===========================================================#
+        train_tqdm = tqdm(train_loader, desc="Train")
+        total_step_cnt = train(subject_model, device, train_tqdm, optimizer, e, total_step_cnt, writer, 10, hook)
+        test(subject_model, device, test_loader, hook)
+
+if __name__ == '__main__':
+    torch.multiprocessing.set_start_method('spawn')
+    main()

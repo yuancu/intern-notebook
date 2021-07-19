@@ -1,3 +1,4 @@
 tqdm
 tensorboard<2.4
-pytorch
+transformers
+torch>=1.9.0

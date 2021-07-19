@@ -1,93 +1,124 @@
-import os
 from collections import defaultdict
-from random import choice
-import json
 import numpy as np
 import torch
 import torch.utils.data as Data
+from tqdm import tqdm
+from transformers import BertTokenizerFast
+import config
+from utils import sequence_padding
+from config import predicate2id
 
-file_dir = os.path.dirname(os.path.realpath(__file__))
-generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
-generated_char_path = os.path.join(file_dir, 'generated/all_chars_me.json')
-id2predicate, predicate2id = json.load(open(generated_schema_path))
-id2predicate = {int(i): j for i, j in id2predicate.items()}
-id2char, char2id = json.load(open(generated_char_path))
-
-def seq_padding(X):
-    L = [len(x) for x in X]
-    ML = max(L)
-    # print("ML",ML)
-    return [x + [0] * (ML - len(x)) for x in X]
+MAX_SENTENCE_LEN = config.max_sentence_len
+NUM_CLASSES = config.num_classes
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-class MyDataset(Data.Dataset):
-    """
-        下载数据、初始化数据，都可以在这里完成
-    """
-
-    def __init__(self, data):
+class MyDevDataset(Data.Dataset):
+    def __init__(self, data, bert_model_name):
+        super().__init__()
         self.data = data
-        self.len = len(data)
+        self.tokenizer = BertTokenizerFast.from_pretrained("bert-base-chinese")
 
     def __getitem__(self, index):
-        d = self.data[index]
-        return self.process_data(d)
+        return self.process_data(self.data[index])
 
     def __len__(self):
-        return self.len
-    
+        return len(self.data)
+
     def process_data(self, d):
         text = d['text']
-        items = defaultdict(list)
-        for sp in d['spo_list']:
-            subjectid = text.find(sp[0])
-            objectid = text.find(sp[2])
-            if subjectid != -1 and objectid != -1:
-                key = (subjectid, subjectid+len(sp[0])) # key is the span(start, end) of the subject
-                # items is {(S_start, S_end): list of (O_start_pos, O_end_pos, predicate_id)}
-                items[key].append(
-                    (objectid, objectid+len(sp[2]), predicate2id[sp[1]]))
-        # t is text token ids
-        t = [char2id.get(c, 1) for c in text]  # 1是unk，0是padding
-        # s1: one-hot vector where start of subject is 1
-        # s2: one-hot vector where end of subject is 1
-        s1, s2 = [0] * len(text), [0] * len(text)
-        for j in items:
-            s1[j[0]] = 1
-            s2[j[1]-1] = 1
-        # o1: zero vector, the start of each O is marked with its predicate ID
-        # o2: zero vector, the end of each O is marked with its predicate ID
-        o1, o2 = [0] * len(text), [0] * len(text)  # 0是unk类（共49+1个类）
-        k1, k2 = (0, 0)
-        if items:
-            # k1, k2: randomly sampled (S_start, S_end) pair?
-            k1, k2 = choice(list(items.keys()))
-            for j in items[(k1, k2)]:
-                o1[j[0]] = j[2]
-                o2[j[1]-1] = j[2]
-        return t, s1, s2, k1, k2-1, o1, o2
+        output = self.tokenizer.encode_plus(text, max_length=MAX_SENTENCE_LEN, truncation=True, 
+            padding=True, return_offsets_mapping=True)
+        token = output['input_ids']
+        att_mask = output['attention_mask']
+        offset_mapping = output['offset_mapping']
+        return text, token, d['spo_list'], att_mask, offset_mapping
+
+def dev_collate_fn(data):
+    texts = [item[0] for item in data]
+    tokens = [item[1] for item in data] # bsz *[(1, sent_len)]
+    # tokens = torch.cat(tokens, dim=0) # (bsz, sent_len)
+    spoes = [item[2] for item in data] # bsz * [list of spoes]
+    att_masks = [item[3] for item in data] # bsz * [(1, sent_len)]
+    offset_mappings = [item[4] for item in data]
+    tokens = torch.tensor(sequence_padding(tokens)).to(device)
+    att_masks = torch.tensor(sequence_padding(att_masks)).to(device)
+    return texts, tokens, spoes, att_masks, offset_mappings
 
 
-def collate_fn(data):
-    t = [item[0] for item in data]
-    s1 = [item[1] for item in data]
-    s2 = [item[2] for item in data]
-    k1 = [item[3] for item in data]
-    k2 = [item[4] for item in data]
-    o1 = [item[5] for item in data]
-    o2 = [item[6] for item in data]
-    t = np.array(seq_padding(t))
-    s1 = np.array(seq_padding(s1))
-    s2 = np.array(seq_padding(s2))
-    o1 = np.array(seq_padding(o1))
-    o2 = np.array(seq_padding(o2))
-    k1, k2 = np.array(k1), np.array(k2)
-    return {
-        'T': torch.LongTensor(t),
-        'S1': torch.FloatTensor(s1),
-        'S2': torch.FloatTensor(s2),
-        'K1': torch.LongTensor(k1),
-        'K2': torch.LongTensor(k2),
-        'O1': torch.LongTensor(o1),
-        'O2': torch.LongTensor(o2),
-    }
+class NeatDataset(Data.Dataset):
+    def __init__(self, data, bert_model_name):
+        super().__init__()
+        self.data = data
+        self.tokenizer = BertTokenizerFast.from_pretrained("bert-base-chinese") # "bert-base-chinese"
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        raw_data = self.data[index]
+        return self.process_data(raw_data)
+    
+    def process_data(self, d):
+        encoded = self.tokenizer(d['text'], max_length=MAX_SENTENCE_LEN, 
+            padding=True, truncation=True)
+        token_ids = encoded['input_ids']
+        attention_mask = encoded['attention_mask']
+        # 整理三元组 {s: [(o, p)]}
+        spoes = defaultdict(list)
+        for s, p, o in d['spo_list']:
+            s = self.tokenizer.encode(s, add_special_tokens=False)
+            p = predicate2id[p]
+            o = self.tokenizer.encode(o, add_special_tokens=False)
+            s_idx = search(s, token_ids)
+            o_idx = search(o, token_ids)
+            if s_idx != -1 and o_idx != -1:
+                s = (s_idx, s_idx + len(s) - 1)
+                o = (o_idx, o_idx + len(o) - 1, p)
+                spoes[s].append(o)
+        # subject标签
+        subject_labels = np.zeros((len(token_ids), 2))
+        object_labels = np.zeros((len(token_ids), len(predicate2id), 2))
+        # assign subject as (0, 0) if there's no subject in this sentence. i.e. truncated
+        subject_ids = (0, 0)
+        if spoes:
+            for s in spoes:
+                subject_labels[s[0], 0] = 1
+                subject_labels[s[1], 1] = 1
+            # 随机选一个subject（这里没有实现错误！这就是想要的效果！！）
+            start, end = np.array(list(spoes.keys())).T
+            start = np.random.choice(start)
+            end = np.random.choice(end[end >= start])
+            subject_ids = (start, end)
+            # 对应的object标签
+            for o in spoes.get(subject_ids, []):
+                object_labels[o[0], o[2], 0] = 1
+                object_labels[o[1], o[2], 1] = 1
+        return token_ids, attention_mask, subject_ids, subject_labels, object_labels
+
+def neat_collate_fn(data):
+    batch_token_ids = [item[0] for item in data]
+    batch_attention_masks = [item[1] for item in data]
+    batch_subject_ids = [item[2] for item in data]
+    batch_subject_labels = [item[3] for item in data]
+    batch_object_labels = [item[4] for item in data]
+
+    batch_token_ids = torch.tensor(sequence_padding(batch_token_ids)).to(device)
+    batch_attention_masks = torch.tensor(sequence_padding(batch_attention_masks)).to(device)
+    batch_subject_ids = torch.tensor(batch_subject_ids).to(device)
+    batch_subject_labels = torch.FloatTensor(sequence_padding(batch_subject_labels)).to(device)
+    batch_object_labels = torch.FloatTensor(sequence_padding(batch_object_labels)).to(device)
+    return batch_token_ids, batch_attention_masks, batch_subject_ids, batch_subject_labels, batch_object_labels
+
+
+
+def search(pattern, sequence):
+    """
+    从sequence中寻找子串pattern
+    如果找到，返回第一个下标；否则返回-1。
+    """
+    n = len(pattern)
+    for i in range(len(sequence) - len(pattern)):
+        if sequence[i:i + n] == pattern:
+            return i
+    return -1
