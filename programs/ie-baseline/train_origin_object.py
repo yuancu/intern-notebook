@@ -161,7 +161,7 @@ def main():
     print("word embeding size is", WORD_EMB_SIZE)
 
     if config.load_weight is not None:
-        subject_model.load_state_dict(torch.load(f"./save/subjec_{config.load_weight}", map_location=device))
+        subject_model.load_state_dict(torch.load(f"./save/subject_{config.load_weight}", map_location=device))
         object_model.load_state_dict(torch.load(f"./save/object_{config.load_weight}", map_location=device))
 
     params = subject_model.parameters()
