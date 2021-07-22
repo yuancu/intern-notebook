@@ -87,7 +87,7 @@ class SubjectModel(nn.Module):
 
         # requires (batch, seq, channel)
         encoder_layer = nn.TransformerEncoderLayer(d_model=word_emb_size, nhead=8, batch_first=True)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=1)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=2)
 
         self.conv1 = nn.Sequential(
             nn.Conv1d(
