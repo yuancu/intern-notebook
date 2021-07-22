@@ -6,7 +6,7 @@ import time
 from tqdm import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-bad_object_signs = ['，', ',', '》', '《', '"', '：', '  ', '…', '、']
+bad_tokens = ['，', ',', '》', '《', '"', '：', '  ', '…', '、']
 
 
 def get_now_time():
@@ -75,11 +75,6 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
             offset_mapping = offset_mappings[k]
             subjects_text = [text[offset_mapping[i][0]: offset_mapping[j][-1]] for i, j in subjects]
             all_subjects_text += subjects_text
-            # for subject in subjects:
-            #     subj_head = offset_mapping[subject[0]][0]
-            #     subj_tail = offset_mapping[subject[1]][-1]
-            #     subject_text = text[subj_head: subj_tail]
-            #     all_subjects_text.append(subject_text)
             if subjects:
                 # print("len(text)", len(text))
                 # print("len(token_ids)", len(token_ids))
@@ -90,6 +85,12 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
                 pseudo_mask = torch.stack([attention_mask[k]]*len(subjects), dim=0)
                 object_preds = object_model(pseudo_states, subjects, attention_mask=pseudo_mask)
                 for subject, object_pred in zip(subjects, object_preds):
+                    sub_text_head = offset_mapping[subject[0]][0]
+                    sub_text_tail = offset_mapping[subject[1]][-1]
+                    subject_text = text[sub_text_head: sub_text_tail]
+                    # if subject contrain bad tokens, skip this subject
+                    if any(t in subject_text for t in bad_tokens):
+                        continue
                     obj_start = torch.where(object_pred[:, :, 0] > 0.6)
                     obj_end = torch.where(object_pred[:, :, 1] > 0.4)
                     for _start, predicate1 in zip(*obj_start):
@@ -97,23 +98,11 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
                             if _start <= _end and predicate1 == predicate2:
                                 text = texts[k]
                                 offset_mapping = offset_mappings[k]
-                                # Tokens and chars in are not one-to-one mapped, we need to do
-                                # a remapping using the offset_mapping returned from tokenizer.
-                                # offset_mapping is a list of (token_head, token_tail) pairs
-                                # print("object_preds.shape", object_preds.shape)
-                                # print("len(offset_mapping)", len(offset_mapping))
-                                # print("subject[0]", subject[0])
-                                # print("subject[1]", subject[1])
-                                sub_text_head = offset_mapping[subject[0]][0]
-                                sub_text_tail = offset_mapping[subject[1]][-1]
-                                # print("_start", _start)
-                                # print("_end", _end)
                                 obj_text_head = offset_mapping[_start][0]
                                 obj_text_tail = offset_mapping[_end][-1]
-                                subject_text = text[sub_text_head: sub_text_tail]
                                 predicate_text = id2predicate[int(predicate1.item())]
                                 object_text = text[obj_text_head: obj_text_tail]
-                                if not any(t in object_text for t in bad_object_signs):
+                                if not any(t in object_text for t in bad_tokens):
                                     spoes.append(
                                         (subject_text,
                                         predicate_text,
