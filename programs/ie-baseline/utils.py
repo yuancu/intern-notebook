@@ -92,7 +92,7 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
                     if any(t in subject_text for t in bad_tokens):
                         continue
                     obj_start = torch.where(object_pred[:, :, 0] > 0.6)
-                    obj_end = torch.where(object_pred[:, :, 1] > 0.4)
+                    obj_end = torch.where(object_pred[:, :, 1] > 0.5)
                     for _start, predicate1 in zip(*obj_start):
                         for _end, predicate2 in zip(*obj_end):
                             if _start <= _end and predicate1 == predicate2:
@@ -109,7 +109,7 @@ def extract_spoes(texts, token_ids, offset_mappings, subject_model, object_model
                                         object_text)
                                     )
                                 break
-            if writer is not None and global_step is not None:
+            if writer is not None and global_step is not None and global_step % 500 == 0:
                 writer.add_text('eval/extracted_subject', str(all_subjects_text), global_step)
     return spoes
 
@@ -122,14 +122,15 @@ def para_eval(subject_model, object_model, loader, id2predicate, batch_eval=Fals
     cnt = 0
     for step, batch in tqdm(iter(enumerate(loader)), desc='Eval'):
         texts, tokens, spoes, att_masks, offset_mappings = batch
-        R = set(extract_spoes(texts, tokens, offset_mappings, subject_model, object_model, id2predicate, attention_mask=att_masks, writer=writer, global_step=epoch*len(loader)+step))
+        global_step = epoch*len(loader)+step
+        R = set(extract_spoes(texts, tokens, offset_mappings, subject_model, object_model, id2predicate, attention_mask=att_masks, writer=writer, global_step=global_step))
         T = set()
         for spo_list in spoes:
             T.update([tuple(spo) for spo in spo_list])
         A += len(R & T)
         B += len(R)
         C += len(T)
-        if writer is not None:
+        if writer is not None and global_step % 500 == 0:
             writer.add_text("eval/extracted_spo", str(R), epoch*len(loader)+step)
             writer.add_text("eval/gold_spo", str(T), epoch*len(loader)+step)
         # if cnt % 1000 == 0:
