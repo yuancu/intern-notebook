@@ -42,15 +42,9 @@ $ python3 main.py --task {task_name} \
                   --do_train --do_eval \
                   --use_crf
 
-# For ATIS
-$ python3 main.py --task atis \
+$ python3 main.py --task naive \
                   --model_type bert \
-                  --model_dir atis_model \
-                  --do_train --do_eval
-# For Snips
-$ python3 main.py --task snips \
-                  --model_type bert \
-                  --model_dir snips_model \
+                  --model_dir naive_model \
                   --do_train --do_eval
 ```
 
