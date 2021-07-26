@@ -12,73 +12,6 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BertTokenizer
-<<<<<<< HEAD
-from data_gen import MyDataset, collate_fn
-from model_bert_based import SubjectModel, ObjectModel
-from utils import extract_items
-import config
-from config import create_parser
-
-parser = create_parser()
-args = parser.parse_args()
-config.batch_size = args.batch_size
-if args.debug_mode:
-    config.debug_mode = True
-
-BERT_MODEL_NAME = config.bert_model_name
-# for macOS compatibility
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
-torch.backends.cudnn.benchmark = True
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-WORD_EMB_SIZE = config.word_emb_size # default bert embedding size
-EPOCH_NUM = config.epoch_num
-
-BATCH_SIZE = config.batch_size
-
-from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter(log_dir='./logs')
-
-file_dir = os.path.dirname(os.path.realpath(__file__))
-train_path = os.path.join(file_dir, 'generated/train_data_me.json')
-dev_path = os.path.join(file_dir, 'generated/dev_data_me.json')
-generated_schema_path = os.path.join(file_dir, 'generated/schemas_me.json')
-generated_char_path = os.path.join(file_dir, 'generated/all_chars_me.json')
-train_data = json.load(open(train_path))
-dev_data = json.load(open(dev_path))
-id2predicate, predicate2id = json.load(open(generated_schema_path))
-id2predicate = {int(i): j for i, j in id2predicate.items()}
-id2char, char2id = json.load(open(generated_char_path))
-num_classes = len(id2predicate)
-
-
-def evaluate(tokenizer, subject_model, object_model, batch_eval=False):
-    A, B, C = 1e-10, 1e-10, 1e-10
-    cnt = 0
-    for d in tqdm(iter(dev_data)):
-        if batch_eval and cnt == 100: # use only 100 samples to eval loss in batch
-            break
-        if config.debug_mode:
-            if cnt > 1:
-                break
-        R = set(extract_items(d['text'], tokenizer, subject_model, object_model, id2predicate))
-        T = set([tuple(i) for i in d['spo_list']])
-        A += len(R & T)
-        B += len(R)
-        C += len(T)
-        # if cnt % 1000 == 0:
-        #     print('iter: %d f1: %.4f, precision: %.4f, recall: %.4f\n' % (cnt, 2 * A / (B + C), A / B, A / C))
-        cnt += 1
-    return 2 * A / (B + C), A / B, A / C
-
-
-if __name__ == '__main__':
-    bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
-    torch_dataset = MyDataset(train_data, BERT_MODEL_NAME)
-    loader = Data.DataLoader(
-        dataset=torch_dataset,      # torch TensorDataset format
-=======
 from torch.utils.tensorboard import SummaryWriter
 
 from data_gen import MyDevDataset, NeatDataset, dev_collate_fn, neat_collate_fn
@@ -197,7 +130,6 @@ def main():
     test_dataset = MyDevDataset(dev_data, BERT_MODEL_NAME)
     train_loader = DataLoader(
         dataset=train_dataset,      # torch TensorDataset format
->>>>>>> pipe
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
         num_workers=1,
