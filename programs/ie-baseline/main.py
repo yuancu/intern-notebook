@@ -132,21 +132,21 @@ def main():
         dataset=train_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
-        num_workers=2,
+        num_workers=1,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
     )
     dev_loader = DataLoader(
         dataset=dev_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
-        num_workers=2,
+        num_workers=1,
         collate_fn=neat_collate_fn,      # subprocesses for loading data
     )
     test_loader = DataLoader(
         dataset=test_dataset,      # torch TensorDataset format
         batch_size=BATCH_SIZE,      # mini batch size
         shuffle=True,               # random shuffle for training
-        num_workers=2,
+        num_workers=1,
         collate_fn=dev_collate_fn,      # subprocesses for loading data
         multiprocessing_context='spawn',
     )
@@ -181,9 +181,9 @@ def main():
     total_step_cnt = 0 # a counter for tensorboard writer
     for e in range(EPOCH_NUM):
         train(subject_model, object_model, device, train_loader, optimizer, e, writer=writer, log_interval=10)
-        # if e > 100 and e % 5 == 0:
-        #     torch.save(subject_model.state_dict(), f"save/subject_{args.logname}_{e}")
-        #     torch.save(object_model.state_dict(), f"save/object_{args.logname}_{e}")
+        if e > 100 and e % 5 == 0:
+            torch.save(subject_model.state_dict(), f"save/subject_{args.logname}_{e}")
+            torch.save(object_model.state_dict(), f"save/object_{args.logname}_{e}")
         # test(subject_model, device, test_loader, e)
         evaluate(subject_model, object_model, test_loader, id2predicate, e, writer)
 
