@@ -1,11 +1,17 @@
 import torch
 from torch import nn
-import numpy as np
-#import matplotlib.pyplot as plt
-from transformers import BertTokenizer, PreTrainedModel, BertModel
+from transformers import BertModel, BertForTokenClassification
+import json
+
 import config
+from data_gen import MAX_SENTENCE_LEN
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+MAX_SENTENCE_LEN = config.max_sentence_len
+WORD_EMB_SIZE = config.word_emb_size
+
+# used for nn.Embedding layer
+# id2char, char2id = json.load(open('./all_chars_me.json'))
 
 ###################
 # BERT related code
@@ -40,123 +46,182 @@ def seq_and_vec(x):
 
 def seq_gather(x):
     """seq是[None, seq_len, s_size]的格式，
-    idxs是[None,]的格式，在seq的第i个序列中选出第idxs[i]个向量，
-    最终输出[None, s_size]的向量。
+    idxs是[None, 2]的格式，在seq的第i个序列中选出第idxs[i]个向量，
+    最终输出[None, s_size*2]的向量。
     """
     seq, idxs = x
-    batch_size = seq.shape[0]
+    batch_size = seq.size(0)
+    query_num = idxs.size(1)
+    batch_idxs = torch.arange(0, batch_size).to(device)
+
+    batch_idxs = torch.unsqueeze(batch_idxs, 1)
+
     res = []
     for i in range(batch_size):
-        vec = seq[i, idxs[i], :]
-        res.append(vec)
+        temp = []
+        for j in range(query_num):
+            temp.append(seq[i, idxs[i][j], :])
+        res.append(torch.cat(temp, 0))
+
     res = torch.stack(res, dim=0)
-    return res
+    return res.to(device)
 
 
 class SubjectModel(nn.Module):
     def __init__(self, word_emb_size):
         super(SubjectModel, self).__init__()
 
-        self.bert = BertModel.from_pretrained(BERT_MODEL_NAME)
+        # Use the freezed bert as word embedding to reduce architecture modification
+        # self.bert = BertModel.from_pretrained(BERT_MODEL_NAME)
+        # for p in self.bert.parameters():
+        #     p.requires_grad = False
 
-        self.conv1 = nn.Sequential(
-            nn.Conv1d(
-                in_channels=word_emb_size * 2,  # 输入的深度
-                out_channels=word_emb_size,  # filter 的个数，输出的高度
-                kernel_size=3,  # filter的长与宽
-                stride=1,  # 每隔多少步跳一下
-                padding=1,  # 周围围上一圈 if stride= 1, pading=(kernel_size-1)/2
-            ),
+        # 21129 is from https://huggingface.co/bert-base-chinese/blob/main/vocab.txt
+        self.embed = nn.Embedding(21129, WORD_EMB_SIZE)
+
+        self.dropout = nn.Sequential(
+            nn.Dropout(0.20),  # drop 20% of the neuron 
+        )
+
+        self.lstm = nn.LSTM(
+            input_size = word_emb_size,
+            hidden_size = word_emb_size//2,
+            num_layers = 2,
+            batch_first = True,
+            bidirectional = True
+        )
+
+        # # layer for subject prediction
+        self.dense = nn.Sequential(
+            nn.Linear(word_emb_size, word_emb_size//4),
             nn.ReLU(),
+            nn.Linear(word_emb_size//4, 2),
+            nn.Sigmoid()
         )
-        self.fc_ps1 = nn.Sequential(
-            nn.Linear(word_emb_size, 1),
-        )
+        # self.bert = BertForTokenClassification.from_pretrained(BERT_MODEL_NAME, num_labels=2)
 
-        self.fc_ps2 = nn.Sequential(
-            nn.Linear(word_emb_size, 1),
-        )
 
-    def forward(self, text, att_mask):
+
+    def forward(self, text, attention_mask=None):
         """
         Performs forward and backward propagation and updates weights
         
         Parameters
         ----------
         text: tensor
-            (batch_size, max_len) a batch of indexed texts
+            (batch_size, max_len) a batch of tokenized texts
             
         Returns
         -------
-        loss: float
-            Cross-entropy loss
+        subject_preds: tensor
+            (batch_size, sent_len, 2)
+        hidden_states: tensor
+            (batch_size, sent_len, embed_size)
         """        
-        output = self.bert(text)
+        # encoded = self.bert(text, attention_mask=attention_mask, output_hidden_states=True)
         # hidden_states: (batch_size, sequence_length, hidden_size=768)
         #       Sequence of hidden-states at the output of the last layer of the model.
-        hidden_states = output['last_hidden_state']
+       
+        # hidden_states = encoded['hidden_states'][-1]
         # pooler_output: (batch_size, hidden_size)
         #       Last layer hidden-state of the first token of the sequence 
         #       (classification token) further processed by a Linear layer and a Tanh 
         #       activation function
         # pooler_output = output['pooler_output']
 
+        embeded = self.embed(text)
+        hidden_states = self.dropout(embeded)
+        hidden_states, _ = self.lstm(hidden_states)
 
-        t_max, t_max_index = seq_max_pool([hidden_states, att_mask])
+        subject_preds = self.dense(hidden_states)
 
-        h = seq_and_vec([hidden_states, t_max])
+        # subject_preds = subject_preds**2
 
-        h = h.permute(0, 2, 1)
+        return subject_preds, hidden_states
 
-        h = self.conv1(h)
 
-        h = h.permute(0, 2, 1)
+class CondLayerNorm(nn.Module):
+    def __init__(self, sent_len, embed_size, encoder_hidden=None):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(normalized_shape=embed_size, elementwise_affine=True)
+        if encoder_hidden:
+            self.gamma_encoder = nn.Sequential(
+                nn.Linear(in_features=embed_size*2, out_features= encoder_hidden),
+                nn.ReLU(),
+                nn.Linear(in_features=encoder_hidden, out_features=embed_size)
+            )
+            self.beta_encoder = nn.Sequential(
+                nn.Linear(in_features=embed_size*2, out_features= encoder_hidden),
+                nn.ReLU(),
+                nn.Linear(in_features=encoder_hidden, out_features=embed_size)
+            )
+        else:
+            self.gamma_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
+            self.beta_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
 
-        ps1 = self.fc_ps1(h)
-        ps2 = self.fc_ps2(h)
-
-        return [ps1, ps2, hidden_states, t_max]
+    def forward(self, hidden_states, subject):
+        """
+        Perform layer normalization with conditions derived from subject embeddings
+        
+        Parameters
+        ----------
+        hidden_states: tensor
+            (batch_size, sent_len, embed_size) hidden states generated from bert
+        subject: tensor
+            (batch_size, 2*embed_size) concatenation of the start and end of a sampled subject
+            
+        Returns
+        -------
+        normalized: tensor
+            (batch_size, sent_len, embed_size) conditional-normalized hidden states
+        """       
+        std, mean = torch.std_mean(hidden_states, dim=-1, unbiased=False, keepdim=True)
+        gamma = self.gamma_encoder(subject) # encoder output: (bsz, word_embed)
+        beta = self.beta_encoder(subject)
+        gamma = gamma.view(-1, 1, gamma.shape[-1]) # (bsz, 1, word_embed_size)
+        beta = beta.view(-1, 1, beta.shape[-1]) # (bsz, 1, word_embed_size)
+        normalized = (hidden_states - mean) / std * gamma + beta # hidden states: (bsz, sent_len, word_embed_size)
+        return normalized
 
 
 class ObjectModel(nn.Module):
     def __init__(self, word_emb_size, num_classes):
         super(ObjectModel, self).__init__()
+        self.num_classes = num_classes
 
-        self.conv1 = nn.Sequential(
-            nn.Conv1d(
-                in_channels=word_emb_size*4,  # 输入的深度
-                out_channels=word_emb_size,  # filter 的个数，输出的高度
-                kernel_size=3,  # filter的长与宽
-                stride=1,  # 每隔多少步跳一下
-                padding=1,  # 周围围上一圈 if stride= 1, pading=(kernel_size-1)/2
-            ),
-            nn.ReLU(),
+        self.cond_layer_norm = CondLayerNorm(MAX_SENTENCE_LEN, WORD_EMB_SIZE, encoder_hidden=WORD_EMB_SIZE//2)
+
+        self.pred_object = nn.Sequential(
+            nn.Linear(in_features=word_emb_size, out_features=num_classes*2),
+            nn.Sigmoid()
         )
 
-        self.fc_ps1 = nn.Sequential(
-            nn.Linear(word_emb_size, num_classes+1),
-            # nn.Softmax(),
-        )
+    def forward(self, hidden_states, subject_pos, attention_mask=None):
+        """
+        Extract objects with given subject positions
+        
+        Parameters
+        ----------
+        hidden_states: tensor
+            (batch_size, sent_len, embed_size) hidden states generated from bert
+        subject: tensor
+            (batch_size, 2*embed_size) concatenation of the start and end of a sampled subject
 
-        self.fc_ps2 = nn.Sequential(
-            nn.Linear(word_emb_size, num_classes+1),
-            # nn.Softmax(),
-        )
+        Returns
+        -------
+        preds: tensor
+            (batch_size, sent_len, predicate_num, 2) conditional-normalized hidden states
+        """ 
+        
+        subject = seq_gather([hidden_states, subject_pos]).to(device) # embedding of sub_start (bsz, emb_size*2)
+      
+        normalized = self.cond_layer_norm(hidden_states, subject) # (bsz, sent_len, emb_size)
 
-    def forward(self, hidden_states, t_max, subject_start_pos, subject_end_pos):
+        # probs shape: (batch_size, sent_len, 2*len(predicates)) 
+        # for every predicates, predicate probable start(s) and end(s) of objects
+        probs = self.pred_object(normalized)
+        probs = probs ** 4
 
-        subject_start_pos = seq_gather([hidden_states, subject_start_pos])
+        preds = probs.reshape((probs.shape[0], probs.shape[1], -1, 2)) # reshaped to (bsz, sent_len, pred_len, 2)
 
-        subject_end_pos = seq_gather([hidden_states, subject_end_pos])
-
-        k = torch.cat([subject_start_pos, subject_end_pos], 1)
-        h = seq_and_vec([hidden_states, t_max])
-        h = seq_and_vec([h, k])
-        h = h.permute(0, 2, 1)
-        h = self.conv1(h)
-        h = h.permute(0, 2, 1)
-
-        po1 = self.fc_ps1(h)
-        po2 = self.fc_ps2(h)
-
-        return [po1, po2]
+        return preds

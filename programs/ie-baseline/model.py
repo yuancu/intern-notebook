@@ -144,7 +144,12 @@ class po_model(nn.Module):
         )
 
     def forward(self, t, t_max, k1, k2):
+        """
+        t: (bsz, sent_len, emb_size)
+        t_max: (bsz, emb_size)
+        k1: (bsz, )
 
+        """
         k1 = seq_gather([t, k1])
 
         k2 = seq_gather([t, k2])
@@ -154,9 +159,9 @@ class po_model(nn.Module):
         h = seq_and_vec([h, k])
         h = h.permute(0, 2, 1)
         h = self.conv1(h)
-        h = h.permute(0, 2, 1)
+        h = h.permute(0, 2, 1) # (bsz, sent_len, emb_size)
 
-        po1 = self.fc_ps1(h)
+        po1 = self.fc_ps1(h) #(bsz, sent_len, num_class)
         po2 = self.fc_ps2(h)
 
         return [po1, po2]
