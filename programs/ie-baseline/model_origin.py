@@ -87,7 +87,7 @@ class SubjectModel(nn.Module):
 
         # requires (batch, seq, channel)
         encoder_layer = nn.TransformerEncoderLayer(d_model=word_emb_size, nhead=8, batch_first=True)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=3)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=1)
 
         self.conv1 = nn.Sequential(
             nn.Conv1d(
@@ -163,22 +163,66 @@ class SubjectModel(nn.Module):
         return [subject_preds, hidden_states]
 
 
+class CondLayerNorm(nn.Module):
+    def __init__(self, embed_size, encoder_hidden=None):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(normalized_shape=embed_size, elementwise_affine=True)
+        if encoder_hidden:
+            self.gamma_encoder = nn.Sequential(
+                nn.Linear(in_features=embed_size*2, out_features= encoder_hidden),
+                nn.ReLU(),
+                nn.Linear(in_features=encoder_hidden, out_features=embed_size)
+            )
+            self.beta_encoder = nn.Sequential(
+                nn.Linear(in_features=embed_size*2, out_features= encoder_hidden),
+                nn.ReLU(),
+                nn.Linear(in_features=encoder_hidden, out_features=embed_size)
+            )
+        else:
+            self.gamma_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
+            self.beta_encoder = nn.Linear(in_features=embed_size*2, out_features=embed_size) 
 
+    def forward(self, hidden_states, subject):
+        """
+        Perform layer normalization with conditions derived from subject embeddings
+        
+        Parameters
+        ----------
+        hidden_states: tensor
+            (batch_size, sent_len, embed_size) hidden states generated from bert
+        subject: tensor
+            (batch_size, 2*embed_size) concatenation of the start and end of a sampled subject
+            
+        Returns
+        -------
+        normalized: tensor
+            (batch_size, sent_len, embed_size) conditional-normalized hidden states
+        """       
+        std, mean = torch.std_mean(hidden_states, dim=-1, unbiased=False, keepdim=True)
+        gamma = self.gamma_encoder(subject) # encoder output: (bsz, word_embed)
+        beta = self.beta_encoder(subject)
+        gamma = gamma.view(-1, 1, gamma.shape[-1]) # (bsz, 1, word_embed_size)
+        beta = beta.view(-1, 1, beta.shape[-1]) # (bsz, 1, word_embed_size)
+        normalized = (hidden_states - mean) / std * gamma + beta # hidden states: (bsz, sent_len, word_embed_size)
+        return normalized
 
 class ObjectModel(nn.Module):
     def __init__(self, word_emb_size, num_classes):
         super(ObjectModel, self).__init__()
 
-        self.conv1 = nn.Sequential(
-            nn.Conv1d(
-                in_channels=word_emb_size*4,  # 输入的深度
-                out_channels=word_emb_size,  # filter 的个数，输出的高度
-                kernel_size=3,  # filter的长与宽
-                stride=1,  # 每隔多少步跳一下
-                padding=1,  # 周围围上一圈 if stride= 1, pading=(kernel_size-1)/2
-            ),
-            nn.ReLU(),
-        )
+        # self.conv1 = nn.Sequential(
+        #     nn.Conv1d(
+        #         in_channels=word_emb_size*4,  # 输入的深度
+        #         out_channels=word_emb_size,  # filter 的个数，输出的高度
+        #         kernel_size=3,  # filter的长与宽
+        #         stride=1,  # 每隔多少步跳一下
+        #         padding=1,  # 周围围上一圈 if stride= 1, pading=(kernel_size-1)/2
+        #     ),
+        #     nn.ReLU(),
+        # )
+
+        self.cond_layer_norm = CondLayerNorm(word_emb_size, encoder_hidden=word_emb_size//2)
+
 
         self.fc_ps1 = nn.Sequential(
             nn.Linear(word_emb_size, num_classes),
@@ -222,13 +266,15 @@ class ObjectModel(nn.Module):
         subj_tail_emb = seq_gather([hidden_states, subj_tail])
         subj_emb = torch.cat([subj_head_emb, subj_tail_emb], 1) # (bsz, emb*2)
         
-        # repeat hidden_max sent_len times and concatenate it to hidden states
-        h = seq_and_vec([hidden_states, hidden_max]) # (bsz, sent, emb*2)
-        # repeat subject embedding sent_len times and concatenate it to h
-        h = seq_and_vec([h, subj_emb]) # (bsz, sent, emb*4)
-        h = h.permute(0, 2, 1)
-        h = self.conv1(h) #(bsz, emb, sent)
-        h = h.permute(0, 2, 1)
+        # # repeat hidden_max sent_len times and concatenate it to hidden states
+        # h = seq_and_vec([hidden_states, hidden_max]) # (bsz, sent, emb*2)
+        # # repeat subject embedding sent_len times and concatenate it to h
+        # h = seq_and_vec([h, subj_emb]) # (bsz, sent, emb*4)
+        # h = h.permute(0, 2, 1)
+        # h = self.conv1(h) #(bsz, emb, sent)
+        # h = h.permute(0, 2, 1)
+
+        h = self.cond_layer_norm(hidden_states, subj_emb) # (bsz, sent_len, emb_size)
 
         po1 = self.fc_ps1(h) # (bsz, sent, cls)
         po2 = self.fc_ps2(h)
@@ -241,5 +287,6 @@ class ObjectModel(nn.Module):
         po2 = torch.sigmoid(po2)
 
         object_preds = torch.stack((po1, po2), dim=3)
+        # object_preds = object_preds ** 4
 
         return object_preds
