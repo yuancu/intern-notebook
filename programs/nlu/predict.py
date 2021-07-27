@@ -44,7 +44,8 @@ def read_input_file(pred_config):
     with open(pred_config.input_file, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            words = line.split()
+            # words = line.split()
+            words = list(line)
             lines.append(words)
 
     return lines
