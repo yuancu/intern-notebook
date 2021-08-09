@@ -65,7 +65,7 @@ class sequence_model(nn.Module):
             return seq_logits, cls_logits
 
 
-def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5):
+def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, return_details=False):
     """
     Customized loss function for the Cimpress sequence generation.
     Inputs:
@@ -105,5 +105,8 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5):
 
     # sum the two loss with weights
     total_loss = alpha * seq_mseloss + (1 - alpha) * cls_loss
-
-    return total_loss
+    
+    if return_details:
+        return total_loss, seq_mseloss, cls_loss
+    else:
+        return total_loss
