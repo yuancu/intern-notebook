@@ -38,7 +38,7 @@ class sequence_model(nn.Module):
         self.seq_transformer = nn.Linear(hidden_size, input_size)
         self.classifier = nn.Linear(hidden_size, output_size)
 
-    def forward(self, input_seqs, h_0):
+    def forward(self, input_seqs, h_0, return_last_hidden=False):
         # check if h_0 is a tuple. if yes, it is for lstm, otherwise is for gru
         if isinstance(h_0, tuple):
             h_0, c_0 = h_0
