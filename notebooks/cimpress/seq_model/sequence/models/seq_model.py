@@ -64,6 +64,17 @@ class sequence_model(nn.Module):
         else:
             return seq_logits, cls_logits
 
+def weight_significance(cls_label):
+    '''
+    Gives a significant factor give its label, it has a bias factor of 0.2
+        0 -> 0 + 0.2: bad
+        1 -> 0.75 + 0.2: neutral
+        2 -> 1 + 0.2: good
+
+    Parameters:
+    cls_label: tensor of shap (batch_size,)
+    '''
+    return -(cls_label - 2)*(cls_label - 2) / 4 + 1 + 0.2
 
 def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, return_details=False):
     """
@@ -100,8 +111,8 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, ret
 
     mb_mseloss = ori_mseloss.mean(dim=[0,2])                # mean without minibatch dimension
 
-    mb_loss_weight = cls_labels/2                           # rate importance of seq loss (bad rate: seq los not important)
-    seq_mseloss = (mb_loss_weight * mb_mseloss).mean()      # combine with classification label and then mean
+    seq_loss_weight = weight_significance(cls_labels)                          # rate importance of seq loss (bad rate: seq los not important)
+    seq_mseloss = (seq_loss_weight * mb_mseloss).mean()      # combine with classification label and then mean
 
     # compute classification loss
     cls_loss = cls_loss_fn(cls_logits, cls_labels)
