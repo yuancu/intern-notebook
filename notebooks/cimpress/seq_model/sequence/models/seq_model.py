@@ -18,7 +18,7 @@ class sequence_model(nn.Module):
                  input_hid_size,
                  hidden_size,
                  num_layers=2,
-                 output_size=2,
+                 output_size=3,
                  cell_type='lstm'):
         super(sequence_model, self).__init__()
         self.in_dim = input_size
@@ -79,8 +79,8 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, ret
                      Y:         [-1, 1] => -100~100 pixel
         seqs_labels: tensor of the input sequence as ground truth, shape: L, N, D.
         cls_logits: tensor of the output of classifier, shape: N, D.
-                    In terms of the Cimpress, the D is 2, 0 for bad image and 1 for good image.
-        cls_lables: tensor of the classification ground truth, shape: N, D
+                    In terms of the Cimpress, the D is 3; 0 for bad image, 1 for neutral image and 2 for good image.
+        cls_lables: tensor of the classification ground truth, shape: N, where each value is in [0, D-1]
         alpha: scalar, as the weight of sequence loss, meanwhile the weight of classificaiton loss is 1 - alpha.
 
     :return:
@@ -97,8 +97,11 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, ret
 
     # compute MSE loss for each sample
     ori_mseloss = seq_loss_fn(seqs_logits, seqs_labels)     # element wise mse comupation
+
     mb_mseloss = ori_mseloss.mean(dim=[0,2])                # mean without minibatch dimension
-    seq_mseloss = (cls_labels * mb_mseloss).mean()          # combine with classification label and then mean
+
+    mb_loss_weight = cls_labels/2                           # rate importance of seq loss (bad rate: seq los not important)
+    seq_mseloss = (mb_loss_weight * mb_mseloss).mean()      # combine with classification label and then mean
 
     # compute classification loss
     cls_loss = cls_loss_fn(cls_logits, cls_labels)
