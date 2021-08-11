@@ -66,15 +66,16 @@ class sequence_model(nn.Module):
 
 def weight_significance(cls_label):
     '''
-    Gives a significant factor give its label, it has a bias factor of 0.2
-        0 -> 0 + 0.2: bad
-        1 -> 0.75 + 0.2: neutral
-        2 -> 1 + 0.2: good
+    Gives a significant factor give its label with formula -(x-2)^2/4+1
+    It has a bias factor of 0.1
+        0 -> 0 + bias: bad
+        1 -> 0.75 + bias: neutral
+        2 -> 1 + bias: good
 
     Parameters:
     cls_label: tensor of shap (batch_size,)
     '''
-    return -(cls_label - 2)*(cls_label - 2) / 4 + 1 + 0.2
+    return -(cls_label - 2)*(cls_label - 2) / 4 + 1 + 0.1
 
 def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, return_details=False):
     """
