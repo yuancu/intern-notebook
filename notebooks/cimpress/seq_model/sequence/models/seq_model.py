@@ -104,16 +104,18 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, ret
     cls_loss_fn = nn.CrossEntropyLoss()
 
     # process sequence logits to fit the input value scales
-    seqs_logits[:, :, -5:-2] = th.softmax(seqs_logits[:, :, -5:-2], dim=2)
+    seqs_logits[:, :, -5:-2] = th.sigmoid(seqs_logits[:, :, -5:-2])
     seqs_logits[:, :, -2:] = th.tanh(seqs_logits[:, :, -2:])
 
     # compute MSE loss for each sample
     ori_mseloss = seq_loss_fn(seqs_logits, seqs_labels)     # element wise mse comupation
+    
+    ori_mseloss[:,:,-5:] =  50 * ori_mseloss[:,:,-5:]       # increase loss weight of meta data
 
     mb_mseloss = ori_mseloss.mean(dim=[0,2])                # mean without minibatch dimension
 
-    seq_loss_weight = weight_significance(cls_labels)                          # rate importance of seq loss (bad rate: seq los not important)
-    seq_mseloss = (seq_loss_weight * mb_mseloss).mean()      # combine with classification label and then mean
+    seq_loss_weight = weight_significance(cls_labels)       # rate importance of seq loss (bad rate: seq los not important)
+    seq_mseloss = (seq_loss_weight * mb_mseloss).mean()     # combine with classification label and then mean
 
     # compute classification loss
     cls_loss = cls_loss_fn(cls_logits, cls_labels)
