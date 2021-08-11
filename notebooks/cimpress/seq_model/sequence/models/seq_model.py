@@ -118,8 +118,11 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, ret
     # compute classification loss
     cls_loss = cls_loss_fn(cls_logits, cls_labels)
 
+    # use a loss to make (x, y) have higher variance
+    var_loss = th.var(seqs_logits[:, :, -2:])
+
     # sum the two loss with weights
-    total_loss = alpha * seq_mseloss + (1 - alpha) * cls_loss
+    total_loss = alpha * seq_mseloss + (1 - alpha) * cls_loss - var_loss * 0.01
     
     if return_details:
         return total_loss, seq_mseloss, cls_loss
