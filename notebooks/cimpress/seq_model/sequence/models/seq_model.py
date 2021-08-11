@@ -104,7 +104,7 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, ret
     cls_loss_fn = nn.CrossEntropyLoss()
 
     # process sequence logits to fit the input value scales
-    seqs_logits[:, :, -5:-2] = th.sigmoid(seqs_logits[:, :, -5:-2])
+    seqs_logits[:, :, -5:-2] = th.softmax(seqs_logits[:, :, -5:-2], dim=2)
     seqs_logits[:, :, -2:] = th.tanh(seqs_logits[:, :, -2:])
 
     # compute MSE loss for each sample
