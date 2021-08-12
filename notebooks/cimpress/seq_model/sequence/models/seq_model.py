@@ -83,12 +83,12 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, ret
     Inputs:
         seqs_logits: tensor of the output of sequences, shape: L, N, D.
                      In terms of the Cimpress, so far the D is 576 + 5, where 576 is the embedding size of images, the 5
-                     dimensions are Scale, Rotation, Alpha, X, and Y. Range is defined as below:
+                     dimensions are X, Y, Scale, Rotation, and Alpha. Range is defined as below:
+                     X:         [-1, 1] => -100~100 pixel
+                     Y:         [-1, 1] => -100~100 pixel
                      Scale:     (0, 1];
                      Rotation:  [0, 1] => 0~360 degree
                      Alpha:     [0, 1]
-                     X:         [-1, 1] => -100~100 pixel
-                     Y:         [-1, 1] => -100~100 pixel
         seqs_labels: tensor of the input sequence as ground truth, shape: L, N, D.
         cls_logits: tensor of the output of classifier, shape: N, D.
                     In terms of the Cimpress, the D is 3; 0 for bad image, 1 for neutral image and 2 for good image.
@@ -104,13 +104,13 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, ret
     cls_loss_fn = nn.CrossEntropyLoss()
 
     # process sequence logits to fit the input value scales
-    seqs_logits[:, :, -5:-2] = th.sigmoid(seqs_logits[:, :, -5:-2])
-    seqs_logits[:, :, -2:] = th.tanh(seqs_logits[:, :, -2:])
+    seqs_logits[:, :, -5:-3] = th.tanh(seqs_logits[:, :, -5:-3]) # x, y
+    seqs_logits[:, :, -3:] = th.sigmoid(seqs_logits[:, :, -3:])  # scale, rotation, alpha
 
     # compute MSE loss for each sample
     ori_mseloss = seq_loss_fn(seqs_logits, seqs_labels)     # element wise mse comupation
     
-    ori_mseloss[:,:,-5:] =  50 * ori_mseloss[:,:,-5:]       # increase loss weight of meta data
+    ori_mseloss[:,:,-5:] =  100 * ori_mseloss[:,:,-5:]       # increase loss weight of meta data
 
     mb_mseloss = ori_mseloss.mean(dim=[0,2])                # mean without minibatch dimension
 
@@ -121,10 +121,10 @@ def seq_loss_fn(seqs_logits, seqs_labels, cls_logits, cls_labels, alpha=0.5, ret
     cls_loss = cls_loss_fn(cls_logits, cls_labels)
 
     # use a loss to make (x, y) have higher variance
-    var_loss = th.var(seqs_logits[:, :, -2:])
+    # var_loss = th.var(seqs_logits[:, :, -2:]) * 0.1
 
     # sum the two loss with weights
-    total_loss = alpha * seq_mseloss + (1 - alpha) * cls_loss - var_loss * 0.01
+    total_loss = alpha * seq_mseloss + (1 - alpha) * cls_loss
     
     if return_details:
         return total_loss, seq_mseloss, cls_loss
