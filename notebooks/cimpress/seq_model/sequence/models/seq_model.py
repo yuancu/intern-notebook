@@ -55,7 +55,7 @@ class sequence_model(nn.Module):
             # Only use the last layer's hidden embeddings for classification
             cls_logits = self.classifier(h_n[-1, :, :])
 
-        cls_logits = F.softmax(cls_logits, dim=1)
+        # cls_logits = F.softmax(cls_logits, dim=1)
         seq_logits = self.seq_transformer(output_seqs)
 
         if return_last_hidden:
